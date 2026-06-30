@@ -1,0 +1,18 @@
+# dependencies
+node_modules/
+
+# env / secrets (keep real values out of git)
+.env
+.env.local
+.env.*.local
+
+# local working notes / handover (not committed per project conventions)
+PROJECT_LOG.md
+*HANDOVER*.md
+
+# build output
+dist/
+
+# os / editor cruft
+.DS_Store
+Thumbs.db
