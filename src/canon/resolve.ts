@@ -3,20 +3,54 @@ import { fetchWiki } from "./client.js";
 const WIKIDATA_API = "https://www.wikidata.org/w/api.php";
 const USER_AGENT =
   "Storyvive/4.0 (https://github.com/adeoluwaadesina/Storyvive-V4; contact via GitHub issues)";
+// maxlag=20 is a compromise: still polite (bots often use 5), but tolerant of
+// Wikidata's query-service lag spikes (sometimes hundreds of seconds) that would
+// otherwise fail every read here. We are a low-volume read client, not a writer.
 const WIKIDATA_DEFAULTS: Record<string, string> = {
   format: "json",
   formatversion: "2",
   origin: "*",
-  maxlag: "5",
+  maxlag: "20",
 };
 
 // Minimal Wikidata fetcher — downstream of fetchWiki calls so no queue needed.
+// Mirrors client.ts's retry discipline: 429/5xx honor Retry-After, and a JSON-level
+// {error:{code:"maxlag"}} response (Wikidata sends HTTP 200 with a stripped body
+// under lag) is retried after a fixed wait rather than silently accepted.
+// More retries + longer maxlag waits than client.ts: Wikidata's query-service lag
+// can persist for tens of seconds, and this is a one-shot resolve, not a stream.
+const WD_MAX_RETRIES = 5;
+const WD_BACKOFF_MS = [1000, 2000, 4000, 8000, 15_000];
+const WD_MAXLAG_WAIT_MS = [5000, 10_000, 15_000, 20_000, 30_000];
+const WD_RETRY_AFTER_CAP_MS = 30_000;
+const wdSleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 async function fetchWikidata<T>(params: Record<string, string>): Promise<T> {
   const qs = new URLSearchParams({ ...WIKIDATA_DEFAULTS, ...params }).toString();
   const url = `${WIKIDATA_API}?${qs}`;
-  const res = await fetch(url, { headers: { "User-Agent": USER_AGENT } });
-  if (!res.ok) throw new Error(`fetchWikidata: HTTP ${res.status} for ${url}`);
-  return (await res.json()) as T;
+  let lastStatus = 0;
+  for (let attempt = 0; attempt <= WD_MAX_RETRIES; attempt++) {
+    const res = await fetch(url, { headers: { "User-Agent": USER_AGENT } });
+    lastStatus = res.status;
+    if (res.status === 429 || res.status >= 500) {
+      if (attempt === WD_MAX_RETRIES) break;
+      const ra = Number(res.headers.get("retry-after"));
+      const wait = Number.isFinite(ra) && ra >= 0
+        ? Math.min(ra * 1000, WD_RETRY_AFTER_CAP_MS)
+        : WD_BACKOFF_MS[attempt] ?? WD_BACKOFF_MS[WD_BACKOFF_MS.length - 1];
+      await wdSleep(wait);
+      continue;
+    }
+    if (!res.ok) throw new Error(`fetchWikidata: HTTP ${res.status} for ${url}`);
+    const body = (await res.json()) as T & { error?: { code?: string } };
+    if (body?.error?.code === "maxlag") {
+      if (attempt === WD_MAX_RETRIES) throw new Error(`fetchWikidata: maxlag exhausted for ${url}`);
+      await wdSleep(WD_MAXLAG_WAIT_MS[attempt] ?? WD_MAXLAG_WAIT_MS[WD_MAXLAG_WAIT_MS.length - 1]);
+      continue;
+    }
+    return body;
+  }
+  throw new Error(`fetchWikidata: retries exhausted (last status ${lastStatus}) for ${url}`);
 }
 
 export type CandidateType =
