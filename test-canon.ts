@@ -4,6 +4,7 @@ import { getPlot } from "./src/canon/plot.js";
 import { chunkEpisodes, chunkPlot, type CanonChunk } from "./src/canon/chunk.js";
 import { cacheEnabled, ensureSchema, getCanon, closeCache } from "./src/canon/cache.js";
 import { resolveTitle, type Candidate, type CandidateType } from "./src/canon/resolve.js";
+import { generateStory } from "./src/generate/generate.js";
 
 const DASH = "—";
 
@@ -249,6 +250,27 @@ async function runCache(query: string): Promise<void> {
   await closeCache();
 }
 
+async function runGenerate(work: string, prompt: string): Promise<void> {
+  console.log(`work: "${work}"`);
+  console.log(`prompt: "${prompt}"\n`);
+  const t0 = Date.now();
+  const result = await generateStory({ work, prompt });
+  const t1 = Date.now();
+
+  console.log(`--- STORY (${result.pageTitle}) ---\n`);
+  console.log(result.story);
+  console.log(`\n--- CITATIONS (${result.citations.length}) ---`);
+  for (let i = 0; i < result.citations.length; i++) {
+    const c = result.citations[i];
+    const loc = c.scope === "episode"
+      ? `S${c.season ?? "?"}E${c.episode ?? "?"} "${c.title ?? "-"}"`
+      : c.title ?? c.scope;
+    console.log(`  [${i + 1}] ${loc}  (dist=${c.distance.toFixed(3)})`);
+  }
+  console.log(`\nusage: ${result.usage.inputTokens} in / ${result.usage.outputTokens} out | ${t1 - t0}ms`);
+  await closeCache();
+}
+
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
   if (args.length === 0) {
@@ -260,6 +282,18 @@ async function main(): Promise<void> {
     console.log('  tsx test-canon.ts --chunks <query>                (task 9: resolve + extract + chunk)');
     console.log('  tsx test-canon.ts --cache <query>                 (task 10: cached pipeline, needs DATABASE_URL)');
     console.log('  tsx test-canon.ts --validate                      (task 8: run the 4-title test suite)');
+    console.log('  tsx test-canon.ts --generate "<work>" :: "<prompt>"  (generate a story; needs OPENAI_API_KEY + ANTHROPIC_API_KEY)');
+    return;
+  }
+
+  if (args[0] === "--generate") {
+    const rest = args.slice(1).join(" ").trim();
+    const parts = rest.split("::").map((s) => s.trim());
+    if (parts.length !== 2 || !parts[0] || !parts[1]) {
+      console.error('ERROR: --generate expects: --generate "<work>" :: "<prompt>"');
+      process.exit(1);
+    }
+    await runGenerate(parts[0], parts[1]);
     return;
   }
 

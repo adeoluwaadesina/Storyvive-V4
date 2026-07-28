@@ -15,6 +15,7 @@ import { getEpisodes } from "./episodes.js";
 import { getPlot } from "./plot.js";
 import { fetchPageRevision } from "./wikitext.js";
 import { chunkEpisodes, chunkPlot, type CanonChunk, type ChunkSource } from "./chunk.js";
+import { embedTexts, embedQuery, toPgVector, embeddingsEnabled } from "./embed.js";
 
 const { Pool } = pg;
 
@@ -103,6 +104,14 @@ async function store(
   meta: { franchise: string; scope: string; pageTitle: string; pageId?: number; revisionId?: number },
   chunks: CanonChunk[],
 ): Promise<void> {
+  // Embed chunk text before the transaction — a slow embed API shouldn't
+  // hold the DB connection open. Skip embedding when no OPENAI_API_KEY is set.
+  let embeddings: (string | null)[] = chunks.map(() => null);
+  if (embeddingsEnabled() && chunks.length > 0) {
+    const vecs = await embedTexts(chunks.map((c) => c.text));
+    embeddings = vecs.map(toPgVector);
+  }
+
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
@@ -121,13 +130,14 @@ async function store(
     // Replace this work's chunks wholesale (stable ids mean unchanged chunks
     // simply reappear with the same id).
     await client.query("DELETE FROM canon_chunk WHERE index_id = $1", [id]);
-    for (const c of chunks) {
+    for (let i = 0; i < chunks.length; i++) {
+      const c = chunks[i];
       await client.query(
         `INSERT INTO canon_chunk
-           (id, index_id, franchise, scope, season, episode, title, text, tokens_approx, source, trust_tier)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+           (id, index_id, franchise, scope, season, episode, title, text, tokens_approx, source, trust_tier, embedding)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
          ON CONFLICT (id) DO NOTHING`,
-        [c.id, id, c.franchise, c.scope, c.season ?? null, c.episode ?? null, c.title ?? null, c.text, c.tokensApprox, c.source, c.trustTier],
+        [c.id, id, c.franchise, c.scope, c.season ?? null, c.episode ?? null, c.title ?? null, c.text, c.tokensApprox, c.source, c.trustTier, embeddings[i]],
       );
     }
     await client.query("COMMIT");
@@ -137,6 +147,44 @@ async function store(
   } finally {
     client.release();
   }
+}
+
+export type RetrievedChunk = CanonChunk & { distance: number };
+
+/**
+ * Retrieve the top-k canon chunks most similar to `query` for a given franchise.
+ * Requires DATABASE_URL + OPENAI_API_KEY. Returns [] when no chunks exist.
+ */
+export async function retrieveChunks(
+  query: string,
+  franchise: string,
+  k = 8,
+): Promise<RetrievedChunk[]> {
+  if (!cacheEnabled()) throw new Error("retrieveChunks: DATABASE_URL not set");
+  if (!embeddingsEnabled()) throw new Error("retrieveChunks: OPENAI_API_KEY not set");
+  const qv = toPgVector(await embedQuery(query));
+  const res = await getPool().query(
+    `SELECT id, franchise, scope, season, episode, title, text, tokens_approx, source, trust_tier,
+            embedding <=> $1::vector AS distance
+       FROM canon_chunk
+      WHERE franchise = $2 AND embedding IS NOT NULL
+      ORDER BY embedding <=> $1::vector
+      LIMIT $3`,
+    [qv, franchise, k],
+  );
+  return res.rows.map((r) => ({
+    id: r.id,
+    franchise: r.franchise,
+    scope: r.scope,
+    season: r.season ?? undefined,
+    episode: r.episode ?? undefined,
+    title: r.title ?? undefined,
+    text: r.text,
+    tokensApprox: r.tokens_approx,
+    source: r.source,
+    trustTier: r.trust_tier,
+    distance: Number(r.distance),
+  }));
 }
 
 function isFresh(row: IndexRow, currentRevisionId?: number): boolean {

@@ -12,6 +12,7 @@ PROJECT_LOG.md
 
 # build output
 dist/
+.next/
 
 # os / editor cruft
 .DS_Store

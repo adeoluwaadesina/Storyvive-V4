@@ -1,6 +1,8 @@
 -- Storyvive canon cache schema (handover Section 9). Idempotent; safe to re-run.
 -- One row per cached work in canon_index, its chunks in canon_chunk.
 
+CREATE EXTENSION IF NOT EXISTS vector;
+
 CREATE TABLE IF NOT EXISTS canon_index (
   id           text PRIMARY KEY,             -- stable hash of provider + page_title
   franchise    text NOT NULL,
@@ -27,5 +29,12 @@ CREATE TABLE IF NOT EXISTS canon_chunk (
   trust_tier    text NOT NULL
 );
 
+-- Retrofit for tables created before the embedding column existed.
+ALTER TABLE canon_chunk ADD COLUMN IF NOT EXISTS embedding vector(1536);
+
 CREATE INDEX IF NOT EXISTS canon_chunk_index_id_idx ON canon_chunk (index_id);
 CREATE INDEX IF NOT EXISTS canon_index_lookup_idx ON canon_index (provider, page_title);
+CREATE INDEX IF NOT EXISTS canon_chunk_franchise_idx ON canon_chunk (franchise);
+-- ivfflat over cosine distance; small `lists` since a single work has ~10-500 chunks
+CREATE INDEX IF NOT EXISTS canon_chunk_embedding_idx
+  ON canon_chunk USING ivfflat (embedding vector_cosine_ops) WITH (lists = 50);
