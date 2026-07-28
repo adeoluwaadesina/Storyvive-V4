@@ -17,9 +17,12 @@ export async function POST(req: Request) {
     await createUser(email, password);
     return NextResponse.json({ ok: true });
   } catch (err) {
-    const message = (err as { code?: string })?.code === "23505"
-      ? "An account with that email already exists."
-      : "Could not create account.";
-    return NextResponse.json({ message }, { status: 400 });
+    if ((err as { code?: string })?.code === "23505") {
+      return NextResponse.json({ message: "An account with that email already exists." }, { status: 400 });
+    }
+    // Log the real cause server-side (visible in Vercel function logs) — the
+    // client message stays generic so we don't leak DB/config details.
+    console.error("signup failed:", err);
+    return NextResponse.json({ message: "Could not create account. Please try again shortly." }, { status: 500 });
   }
 }
