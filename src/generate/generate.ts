@@ -9,7 +9,7 @@
 import OpenAI from "openai";
 import { getCanon, retrieveChunks, type RetrievedChunk } from "../canon/cache.js";
 import type { StoryState } from "./state.js";
-import { formatEpisodeLocation } from "./format.js";
+import { formatEpisodeLocation, formatAirDate } from "./format.js";
 
 const MODEL = "gpt-4o";
 const RETRIEVE_K = 12;
@@ -32,6 +32,7 @@ export type Citation = {
   season?: number;
   episode?: number;
   title?: string;
+  airDate?: string;
   distance: number;
 };
 
@@ -61,8 +62,9 @@ Rules:
 function formatExcerpts(chunks: RetrievedChunk[]): string {
   return chunks
     .map((c, i) => {
+      const airDate = formatAirDate(c.source.airDate);
       const loc = c.scope === "episode"
-        ? `${formatEpisodeLocation(c)} "${c.title ?? "untitled"}"`
+        ? `${formatEpisodeLocation(c)} "${c.title ?? "untitled"}"${airDate ? ` (aired ${airDate})` : ""}`
         : c.title ?? c.scope;
       return `[${i + 1}] (${loc})\n${c.text}`;
     })
@@ -137,6 +139,7 @@ export async function generateChapter(opts: GenerateChapterOptions): Promise<Sto
     season: c.season,
     episode: c.episode,
     title: c.title,
+    airDate: c.source.airDate,
     distance: c.distance,
   }));
 

@@ -29,6 +29,8 @@ export type CanonChunk = {
     pageTitle?: string;
     url?: string;
     revisionId?: number;
+    /** ISO date string, filled in from TMDB when available. */
+    airDate?: string;
   };
   trustTier: "primary" | "secondary";
 };
@@ -152,6 +154,7 @@ export function chunkEpisodes(episodes: Episode[], ctx: ChunkSource): CanonChunk
           pageTitle: ep.sourcePage,
           url: wikiUrl(ep.sourcePage),
           revisionId: ctx.revisionId,
+          airDate: ep.airDate,
         },
         trustTier,
       });

@@ -5,7 +5,7 @@ import { chunkEpisodes, chunkPlot, type CanonChunk } from "./src/canon/chunk.js"
 import { cacheEnabled, ensureSchema, getCanon, closeCache } from "./src/canon/cache.js";
 import { resolveTitle, type Candidate, type CandidateType } from "./src/canon/resolve.js";
 import { generateStory } from "./src/generate/generate.js";
-import { formatEpisodeLocation } from "./src/generate/format.js";
+import { formatEpisodeLocation, formatAirDate } from "./src/generate/format.js";
 
 const DASH = "—";
 
@@ -263,8 +263,9 @@ async function runGenerate(work: string, prompt: string): Promise<void> {
   console.log(`\n--- CITATIONS (${result.citations.length}) ---`);
   for (let i = 0; i < result.citations.length; i++) {
     const c = result.citations[i];
+    const airDate = formatAirDate(c.airDate);
     const loc = c.scope === "episode"
-      ? `${formatEpisodeLocation(c)} "${c.title ?? "-"}"`
+      ? `${formatEpisodeLocation(c)} "${c.title ?? "-"}"${airDate ? ` (aired ${airDate})` : ""}`
       : c.title ?? c.scope;
     console.log(`  [${i + 1}] ${loc}  (dist=${c.distance.toFixed(3)})`);
   }

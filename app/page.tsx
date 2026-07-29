@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useSession, signOut } from "next-auth/react";
 import Link from "next/link";
+import { formatAirDate } from "../src/generate/format";
 
 type Citation = {
   chunkId: string;
@@ -10,6 +11,7 @@ type Citation = {
   season?: number;
   episode?: number;
   title?: string;
+  airDate?: string;
   distance: number;
 };
 
@@ -242,7 +244,7 @@ export default function HomePage() {
                         <li key={cite.chunkId}>
                           [{i + 1}]{" "}
                           {cite.scope === "episode"
-                            ? `${cite.season != null ? `S${cite.season}E${cite.episode ?? "?"}` : cite.episode != null ? `Episode ${cite.episode}` : "Episode"} "${cite.title ?? "untitled"}"`
+                            ? `${cite.season != null ? `S${cite.season}E${cite.episode ?? "?"}` : cite.episode != null ? `Episode ${cite.episode}` : "Episode"} "${cite.title ?? "untitled"}"${formatAirDate(cite.airDate) ? ` · aired ${formatAirDate(cite.airDate)}` : ""}`
                             : cite.title ?? cite.scope}
                         </li>
                       ))}

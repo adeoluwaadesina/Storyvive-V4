@@ -10,6 +10,7 @@
 // V4 handover Section 5 and plan task 6.
 
 import { fetchWikitext, parseEpisodeListTemplates, type EpisodeListEntry } from "./wikitext.js";
+import { resolveTmdbShow, getTmdbEpisodes, tmdbEnabled, type TmdbEpisode } from "./tmdb.js";
 
 export type Episode = EpisodeListEntry & {
   /** Season number when it can be inferred from the source page title. */
@@ -230,5 +231,63 @@ export async function getEpisodes(seedTitle: string): Promise<EpisodesResult> {
     }
   }
 
-  return { pagesScanned, episodes: merge(collected) };
+  const episodes = merge(collected);
+
+  if (tmdbEnabled()) {
+    try {
+      const showId = await resolveTmdbShow(baseName || seedTitle);
+      if (showId != null) {
+        const tmdbEpisodes = await getTmdbEpisodes(showId);
+        if (tmdbEpisodes.length > 0) applyTmdbOverlay(episodes, tmdbEpisodes);
+      }
+    } catch (err) {
+      console.warn(`getEpisodes: TMDB overlay failed for "${seedTitle}"`, err);
+    }
+  }
+
+  return { pagesScanned, episodes };
+}
+
+// Overlay TMDB's season/episode numbers, titles, and air dates onto the
+// wikitext-derived episodes, in place. TMDB numbering is more reliable than
+// the page-title/{{Episode list}} heuristic, so where a confident match
+// exists it wins; anything unmatched is left exactly as the wikitext parser
+// produced it.
+function applyTmdbOverlay(episodes: Episode[], tmdbEpisodes: TmdbEpisode[]): void {
+  const bySeasonAndNumber = new Map<string, TmdbEpisode>();
+  const bySeason = new Map<number, TmdbEpisode[]>();
+  for (const t of tmdbEpisodes) {
+    bySeasonAndNumber.set(`${t.season}:${t.episode}`, t);
+    if (!bySeason.has(t.season)) bySeason.set(t.season, []);
+    bySeason.get(t.season)!.push(t);
+  }
+
+  const withSeason = episodes.filter((e) => e.season != null);
+  const withoutSeason = episodes.filter((e) => e.season == null);
+
+  // Confident case: wikitext already knows the season, so match on season+number.
+  for (const e of withSeason) {
+    const num = e.episodeNumber ?? e.episodeNumber2;
+    if (num == null) continue;
+    const match = bySeasonAndNumber.get(`${e.season}:${num}`);
+    if (match) overlayEpisode(e, match);
+  }
+
+  // Single-season shows with no season subpages (e.g. The Society): only
+  // safe when TMDB agrees there's exactly one season and the counts line up,
+  // so we match by chronological order rather than guessing.
+  const seasonNumbers = [...bySeason.keys()];
+  if (withoutSeason.length > 0 && seasonNumbers.length === 1) {
+    const tmdbSingle = (bySeason.get(seasonNumbers[0]) ?? []).slice().sort((a, b) => a.episode - b.episode);
+    if (tmdbSingle.length === withoutSeason.length) {
+      withoutSeason.forEach((e, i) => overlayEpisode(e, tmdbSingle[i]));
+    }
+  }
+}
+
+function overlayEpisode(e: Episode, t: TmdbEpisode): void {
+  e.season = t.season;
+  e.episodeNumber = t.episode;
+  if (t.title) e.title = t.title;
+  if (t.airDate) e.airDate = t.airDate;
 }
