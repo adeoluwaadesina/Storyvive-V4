@@ -207,24 +207,31 @@ export async function resolveTitle(
   query: string,
   opts?: { preferType?: CandidateType },
 ): Promise<ResolveResult> {
-  const [disambigTitles, search] = [
-    await getDisambigLinks(query),
-    await fetchWiki<SearchResponse>({
-      action: "query",
-      list: "search",
-      srsearch: `intitle:${query}`,
-      srlimit: "10",
-    }),
-  ];
+  const search = await fetchWiki<SearchResponse>({
+    action: "query",
+    list: "search",
+    srsearch: `intitle:${query}`,
+    srlimit: "10",
+  });
   const hits = search.query?.search ?? [];
+  const searchTitlesOrdered = hits.map((h) => h.title);
+
+  let disambigTitles = await getDisambigLinks(query);
+  // MediaWiki's exact `titles=` lookup is case-sensitive beyond the first
+  // letter (unlike full-text search), so a differently-cased query (e.g. "the
+  // society" vs the real title "The Society") can silently miss a
+  // disambiguation page that search already found correctly cased. Retry
+  // against the top search hit's actual title before giving up on it.
+  if (disambigTitles.length === 0 && searchTitlesOrdered[0] && searchTitlesOrdered[0] !== query) {
+    disambigTitles = await getDisambigLinks(searchTitlesOrdered[0]);
+  }
+
   if (disambigTitles.length === 0 && hits.length === 0) {
     return { status: "low", reason: "no search results" };
   }
 
   const snippetByTitle = new Map<string, string>();
   for (const h of hits) snippetByTitle.set(h.title, stripTags(h.snippet));
-
-  const searchTitlesOrdered = hits.map((h) => h.title);
 
   // Combined pool: every distinct title from both sources, sent in one
   // pageprops + Wikidata batch so we can type-check disambig links before
