@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useSession, signOut } from "next-auth/react";
 import Link from "next/link";
 
@@ -13,33 +13,73 @@ type Citation = {
   distance: number;
 };
 
-type StoryResult = {
-  pageTitle: string;
-  story: string;
+type Chapter = {
+  id: string;
+  chapterIndex: number;
+  userPrompt: string;
+  content: string;
   citations: Citation[];
-  generationsUsed: number;
-  generationLimit: number;
 };
+
+type Story = {
+  id: string;
+  work: string;
+  title: string;
+  updatedAt: string;
+};
+
+type Usage = { generationsUsed?: number; generationLimit?: number };
 
 export default function HomePage() {
   const { data: session, status } = useSession();
+  const authed = status === "authenticated" && !!session;
+
   const [work, setWork] = useState("");
   const [prompt, setPrompt] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<StoryResult | null>(null);
 
-  const authed = status === "authenticated" && !!session;
+  const [activeStory, setActiveStory] = useState<Story | null>(null);
+  const [chapters, setChapters] = useState<Chapter[]>([]);
+  const [continuePrompt, setContinuePrompt] = useState("");
+
+  const [stories, setStories] = useState<Story[]>([]);
+  const [usage, setUsage] = useState<Usage>({});
+
   const canSubmit = work.trim().length > 0 && prompt.trim().length > 0 && !loading;
+  const canContinue = continuePrompt.trim().length > 0 && !loading;
 
-  async function submit() {
+  useEffect(() => {
+    if (!authed) return;
+    fetch("/api/stories")
+      .then((r) => r.json())
+      .then((d) => setStories(d.stories ?? []))
+      .catch(() => {});
+  }, [authed, activeStory?.id]);
+
+  async function loadStory(id: string) {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/stories/${id}`);
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.message ?? "Could not load story.");
+        return;
+      }
+      setActiveStory(data.story);
+      setChapters(data.chapters ?? []);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function startStory() {
     if (!canSubmit) return;
     setLoading(true);
     setError(null);
-    setResult(null);
-
     try {
-      const res = await fetch("/api/generate", {
+      const res = await fetch("/api/stories", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ work, prompt }),
@@ -49,12 +89,47 @@ export default function HomePage() {
         setError(data.message ?? "Story generation failed.");
         return;
       }
-      setResult(data);
+      setActiveStory(data.story);
+      setChapters([data.chapter]);
+      setUsage({ generationsUsed: data.generationsUsed, generationLimit: data.generationLimit });
+      setWork("");
+      setPrompt("");
     } catch {
       setError("Story generation temporarily unavailable.");
     } finally {
       setLoading(false);
     }
+  }
+
+  async function continueStory() {
+    if (!canContinue || !activeStory) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/stories/${activeStory.id}/chapters`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: continuePrompt }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.message ?? "Chapter generation failed.");
+        return;
+      }
+      setChapters((prev) => [...prev, data.chapter]);
+      setUsage({ generationsUsed: data.generationsUsed, generationLimit: data.generationLimit });
+      setContinuePrompt("");
+    } catch {
+      setError("Chapter generation temporarily unavailable.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function newStory() {
+    setActiveStory(null);
+    setChapters([]);
+    setError(null);
   }
 
   return (
@@ -91,56 +166,109 @@ export default function HomePage() {
           </div>
         )}
 
-        <div className="space-y-3 rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
-          <input
-            value={work}
-            onChange={(e) => setWork(e.target.value)}
-            placeholder="Work (e.g. The Mandalorian, Foundation, Dune)"
-            disabled={!authed || loading}
-            className="w-full rounded-lg border border-white/10 bg-black/30 px-4 py-2.5 text-sm placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-brand disabled:opacity-50"
-          />
-          <textarea
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            placeholder="What should happen? e.g. Din Djarin and Grogu find an old imperial outpost..."
-            disabled={!authed || loading}
-            rows={3}
-            className="w-full resize-none rounded-lg border border-white/10 bg-black/30 px-4 py-2.5 text-sm placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-brand disabled:opacity-50"
-          />
-          <button
-            onClick={submit}
-            disabled={!authed || !canSubmit}
-            className="w-full rounded-lg bg-gradient-to-r from-brand to-brand-light px-4 py-2.5 font-medium transition hover:opacity-90 disabled:opacity-40"
-          >
-            {loading ? "Writing..." : authed ? "Generate story" : "Sign in to generate"}
-          </button>
-          {error && <p className="text-sm text-red-400">{error}</p>}
-        </div>
-
-        {result && (
-          <div className="space-y-4 rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-brand">{result.pageTitle}</h2>
-              <span className="text-xs text-white/40">
-                {result.generationsUsed}/{result.generationLimit} generations used
-              </span>
-            </div>
-            <p className="whitespace-pre-wrap text-sm leading-relaxed text-white/90">{result.story}</p>
-            {result.citations.length > 0 && (
-              <div className="border-t border-white/10 pt-3 text-xs text-white/50">
-                <p className="mb-1 font-medium">Sources</p>
-                <ul className="space-y-0.5">
-                  {result.citations.map((c, i) => (
-                    <li key={c.chunkId}>
-                      [{i + 1}]{" "}
-                      {c.scope === "episode"
-                        ? `S${c.season ?? "?"}E${c.episode ?? "?"} "${c.title ?? "untitled"}"`
-                        : c.title ?? c.scope}
-                    </li>
-                  ))}
-                </ul>
-              </div>
+        {authed && stories.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <span className="text-white/40">Your stories:</span>
+            {stories.map((s) => (
+              <button
+                key={s.id}
+                onClick={() => loadStory(s.id)}
+                className={`rounded-lg border px-3 py-1 transition ${
+                  activeStory?.id === s.id
+                    ? "border-brand bg-brand/10 text-brand"
+                    : "border-white/10 bg-white/5 text-white/70 hover:border-white/30"
+                }`}
+              >
+                {s.title}
+              </button>
+            ))}
+            {activeStory && (
+              <button onClick={newStory} className="text-white/40 hover:text-white">
+                + New story
+              </button>
             )}
+          </div>
+        )}
+
+        {!activeStory && (
+          <div className="space-y-3 rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
+            <input
+              value={work}
+              onChange={(e) => setWork(e.target.value)}
+              placeholder="Work (e.g. The Mandalorian, Foundation, Dune)"
+              disabled={!authed || loading}
+              className="w-full rounded-lg border border-white/10 bg-black/30 px-4 py-2.5 text-sm placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-brand disabled:opacity-50"
+            />
+            <textarea
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              placeholder="What should happen? e.g. Continue the story from where the show/book left off..."
+              disabled={!authed || loading}
+              rows={3}
+              className="w-full resize-none rounded-lg border border-white/10 bg-black/30 px-4 py-2.5 text-sm placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-brand disabled:opacity-50"
+            />
+            <button
+              onClick={startStory}
+              disabled={!authed || !canSubmit}
+              className="w-full rounded-lg bg-gradient-to-r from-brand to-brand-light px-4 py-2.5 font-medium transition hover:opacity-90 disabled:opacity-40"
+            >
+              {loading ? "Writing..." : authed ? "Start story" : "Sign in to generate"}
+            </button>
+          </div>
+        )}
+
+        {error && <p className="text-sm text-red-400">{error}</p>}
+
+        {activeStory && chapters.length > 0 && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-brand">{activeStory.title}</h2>
+              {usage.generationLimit != null && (
+                <span className="text-xs text-white/40">
+                  {usage.generationsUsed}/{usage.generationLimit} generations used
+                </span>
+              )}
+            </div>
+
+            {chapters.map((c) => (
+              <div key={c.id} className="space-y-3 rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
+                <p className="text-xs uppercase tracking-wide text-white/40">Chapter {c.chapterIndex}</p>
+                <p className="whitespace-pre-wrap text-sm leading-relaxed text-white/90">{c.content}</p>
+                {c.citations.length > 0 && (
+                  <div className="border-t border-white/10 pt-3 text-xs text-white/50">
+                    <p className="mb-1 font-medium">Sources</p>
+                    <ul className="space-y-0.5">
+                      {c.citations.map((cite, i) => (
+                        <li key={cite.chunkId}>
+                          [{i + 1}]{" "}
+                          {cite.scope === "episode"
+                            ? `S${cite.season ?? "?"}E${cite.episode ?? "?"} "${cite.title ?? "untitled"}"`
+                            : cite.title ?? cite.scope}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            ))}
+
+            <div className="space-y-3 rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
+              <textarea
+                value={continuePrompt}
+                onChange={(e) => setContinuePrompt(e.target.value)}
+                placeholder="What happens next?"
+                disabled={loading}
+                rows={2}
+                className="w-full resize-none rounded-lg border border-white/10 bg-black/30 px-4 py-2.5 text-sm placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-brand disabled:opacity-50"
+              />
+              <button
+                onClick={continueStory}
+                disabled={!canContinue}
+                className="w-full rounded-lg bg-gradient-to-r from-brand to-brand-light px-4 py-2.5 font-medium transition hover:opacity-90 disabled:opacity-40"
+              >
+                {loading ? "Writing..." : "Continue story"}
+              </button>
+            </div>
           </div>
         )}
       </div>

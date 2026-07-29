@@ -23,11 +23,13 @@ export function getPool(): pg.Pool {
 let schemaEnsured: Promise<void> | null = null;
 
 /** Idempotent; safe to call on every request, cached per server process. */
-export function ensureUsersSchema(): Promise<void> {
+export function ensureAppSchema(): Promise<void> {
   if (!schemaEnsured) {
     schemaEnsured = (async () => {
-      const sql = await readFile(path.join(process.cwd(), "src/canon/users.sql"), "utf8");
-      await getPool().query(sql);
+      const usersSql = await readFile(path.join(process.cwd(), "src/canon/users.sql"), "utf8");
+      const storySql = await readFile(path.join(process.cwd(), "src/story/schema.sql"), "utf8");
+      await getPool().query(usersSql);
+      await getPool().query(storySql); // depends on users existing (FK), run second
     })();
   }
   return schemaEnsured;

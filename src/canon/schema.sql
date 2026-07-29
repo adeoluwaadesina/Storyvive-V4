@@ -31,6 +31,21 @@ CREATE TABLE IF NOT EXISTS canon_chunk (
 
 -- Retrofit for tables created before the embedding column existed.
 ALTER TABLE canon_chunk ADD COLUMN IF NOT EXISTS embedding vector(1536);
+-- Position within a work's chunk sequence, in canon order (0-based). Lets us
+-- find "the final chunks" (the actual ending) for page-scope works, which
+-- have no season/episode to sort by otherwise.
+ALTER TABLE canon_chunk ADD COLUMN IF NOT EXISTS chunk_index integer NOT NULL DEFAULT 0;
+
+-- Raw (pre-cleaning) wikitext for every source page we actually pulled canon
+-- from, one row per page per work. Lets us later audit "did the model's
+-- citation really reflect what Wikipedia said" without re-fetching live.
+CREATE TABLE IF NOT EXISTS canon_raw (
+  index_id   text NOT NULL REFERENCES canon_index(id) ON DELETE CASCADE,
+  page_title text NOT NULL,
+  wikitext   text NOT NULL,
+  fetched_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (index_id, page_title)
+);
 
 CREATE INDEX IF NOT EXISTS canon_chunk_index_id_idx ON canon_chunk (index_id);
 CREATE INDEX IF NOT EXISTS canon_index_lookup_idx ON canon_index (provider, page_title);

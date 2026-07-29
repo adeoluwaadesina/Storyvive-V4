@@ -13,7 +13,7 @@ import pg from "pg";
 import { resolveTitle, type CandidateType } from "./resolve.js";
 import { getEpisodes } from "./episodes.js";
 import { getPlot } from "./plot.js";
-import { fetchPageRevision } from "./wikitext.js";
+import { fetchPageRevision, fetchWikitext } from "./wikitext.js";
 import { chunkEpisodes, chunkPlot, type CanonChunk, type ChunkSource } from "./chunk.js";
 import { embedTexts, embedQuery, toPgVector, embeddingsEnabled } from "./embed.js";
 
@@ -21,6 +21,11 @@ const { Pool } = pg;
 
 const PROVIDER = "wikipedia";
 const FRESH_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+// Below this age, trust the cache without even checking Wikipedia's current
+// revision — a daily background refresh (see /api/cron/refresh-canon) keeps
+// popular titles inside this window, so most requests skip the revision
+// round-trip entirely instead of paying for it on every hit.
+const SOFT_FRESH_MS = 2 * 24 * 60 * 60 * 1000; // 2 days
 
 let pool: pg.Pool | null = null;
 
@@ -52,11 +57,19 @@ export async function closeCache(): Promise<void> {
   }
 }
 
-/** Create tables/indexes if missing. Idempotent. */
-export async function ensureSchema(): Promise<void> {
-  const here = dirname(fileURLToPath(import.meta.url));
-  const sql = await readFile(join(here, "schema.sql"), "utf8");
-  await getPool().query(sql);
+let schemaEnsured: Promise<void> | null = null;
+
+/** Create tables/indexes if missing. Idempotent; memoized per process so it's
+ *  cheap to call on every getCanon() rather than relying on callers to do it. */
+export function ensureSchema(): Promise<void> {
+  if (!schemaEnsured) {
+    schemaEnsured = (async () => {
+      const here = dirname(fileURLToPath(import.meta.url));
+      const sql = await readFile(join(here, "schema.sql"), "utf8");
+      await getPool().query(sql);
+    })();
+  }
+  return schemaEnsured;
 }
 
 function indexId(pageTitle: string): string {
@@ -80,23 +93,57 @@ async function loadIndex(id: string): Promise<IndexRow | null> {
 
 async function loadChunks(id: string): Promise<CanonChunk[]> {
   const res = await getPool().query(
-    `SELECT id, franchise, scope, season, episode, title, text, tokens_approx, source, trust_tier
+    `SELECT id, franchise, scope, season, episode, title, chunk_index, text, tokens_approx, source, trust_tier
        FROM canon_chunk WHERE index_id = $1
-       ORDER BY season NULLS FIRST, episode NULLS FIRST, id`,
+       ORDER BY season NULLS FIRST, episode NULLS FIRST, chunk_index`,
     [id],
   );
-  return res.rows.map((r) => ({
+  return res.rows.map(rowToChunk);
+}
+
+function rowToChunk(r: {
+  id: string;
+  franchise: string;
+  scope: CanonChunk["scope"];
+  season: number | null;
+  episode: number | null;
+  title: string | null;
+  chunk_index: number;
+  text: string;
+  tokens_approx: number;
+  source: CanonChunk["source"];
+  trust_tier: CanonChunk["trustTier"];
+}): CanonChunk {
+  return {
     id: r.id,
     franchise: r.franchise,
     scope: r.scope,
     season: r.season ?? undefined,
     episode: r.episode ?? undefined,
     title: r.title ?? undefined,
+    chunkIndex: r.chunk_index,
     text: r.text,
     tokensApprox: r.tokens_approx,
     source: r.source,
     trustTier: r.trust_tier,
-  }));
+  };
+}
+
+/**
+ * The last `n` chunks of a cached work, in canon order — i.e. its actual
+ * ending. Used to seed a new story's continuity state from how the real
+ * canon ended, rather than from whatever a prompt happens to sound similar to.
+ */
+export async function getFinalChunks(pageTitle: string, n = 8): Promise<CanonChunk[]> {
+  const id = indexId(pageTitle);
+  const res = await getPool().query(
+    `SELECT id, franchise, scope, season, episode, title, chunk_index, text, tokens_approx, source, trust_tier
+       FROM canon_chunk WHERE index_id = $1
+       ORDER BY season DESC NULLS LAST, episode DESC NULLS LAST, chunk_index DESC
+       LIMIT $2`,
+    [id, n],
+  );
+  return res.rows.map(rowToChunk).reverse(); // chronological order
 }
 
 async function store(
@@ -134,10 +181,10 @@ async function store(
       const c = chunks[i];
       await client.query(
         `INSERT INTO canon_chunk
-           (id, index_id, franchise, scope, season, episode, title, text, tokens_approx, source, trust_tier, embedding)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+           (id, index_id, franchise, scope, season, episode, title, chunk_index, text, tokens_approx, source, trust_tier, embedding)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
          ON CONFLICT (id) DO NOTHING`,
-        [c.id, id, c.franchise, c.scope, c.season ?? null, c.episode ?? null, c.title ?? null, c.text, c.tokensApprox, c.source, c.trustTier, embeddings[i]],
+        [c.id, id, c.franchise, c.scope, c.season ?? null, c.episode ?? null, c.title ?? null, c.chunkIndex, c.text, c.tokensApprox, c.source, c.trustTier, embeddings[i]],
       );
     }
     await client.query("COMMIT");
@@ -147,6 +194,27 @@ async function store(
   } finally {
     client.release();
   }
+
+  // Best-effort: snapshot raw wikitext for every distinct page these chunks
+  // came from, for later audit. Not inside the transaction above — losing a
+  // raw snapshot isn't worth rolling back a successful canon store over.
+  const pages = [...new Set(chunks.map((c) => c.source.pageTitle).filter((p): p is string => Boolean(p)))];
+  await Promise.all(
+    pages.map(async (pageTitle) => {
+      try {
+        const wikitext = await fetchWikitext(pageTitle);
+        await getPool().query(
+          `INSERT INTO canon_raw (index_id, page_title, wikitext, fetched_at)
+             VALUES ($1, $2, $3, now())
+           ON CONFLICT (index_id, page_title) DO UPDATE SET
+             wikitext = EXCLUDED.wikitext, fetched_at = now()`,
+          [id, pageTitle, wikitext],
+        );
+      } catch (err) {
+        console.warn(`storeRaw: failed to snapshot "${pageTitle}"`, err);
+      }
+    }),
+  );
 }
 
 export type RetrievedChunk = CanonChunk & { distance: number };
@@ -164,7 +232,7 @@ export async function retrieveChunks(
   if (!embeddingsEnabled()) throw new Error("retrieveChunks: OPENAI_API_KEY not set");
   const qv = toPgVector(await embedQuery(query));
   const res = await getPool().query(
-    `SELECT id, franchise, scope, season, episode, title, text, tokens_approx, source, trust_tier,
+    `SELECT id, franchise, scope, season, episode, title, chunk_index, text, tokens_approx, source, trust_tier,
             embedding <=> $1::vector AS distance
        FROM canon_chunk
       WHERE franchise = $2 AND embedding IS NOT NULL
@@ -179,6 +247,7 @@ export async function retrieveChunks(
     season: r.season ?? undefined,
     episode: r.episode ?? undefined,
     title: r.title ?? undefined,
+    chunkIndex: r.chunk_index,
     text: r.text,
     tokensApprox: r.tokens_approx,
     source: r.source,
@@ -215,6 +284,7 @@ export async function getCanon(
   query: string,
   opts?: { preferType?: CandidateType; force?: boolean },
 ): Promise<CanonResult> {
+  if (cacheEnabled()) await ensureSchema();
   const resolved = await resolveTitle(query, opts?.preferType ? { preferType: opts.preferType } : undefined);
   let pageTitle: string | undefined;
   let type: CandidateType | undefined;
@@ -231,12 +301,17 @@ export async function getCanon(
 
   const extract = async (revisionId?: number): Promise<CanonChunk[]> => {
     const ctx: ChunkSource = { franchise: pageTitle!, revisionId };
-    if (scope === "episode") {
-      const { episodes } = await getEpisodes(pageTitle!);
-      return chunkEpisodes(episodes, ctx);
+    const chunks = scope === "episode"
+      ? chunkEpisodes((await getEpisodes(pageTitle!)).episodes, ctx)
+      : chunkPlot(await getPlot(pageTitle!), ctx);
+    // Not a fix for wiki-formatting drift, just a tripwire: a resolved TV
+    // series with zero episode chunks (or a resolved page with zero plot
+    // chunks) usually means a template shape we haven't handled yet, not
+    // that the work genuinely has no canon text.
+    if (chunks.length === 0) {
+      console.warn(`getCanon: zero ${scope} chunks extracted for "${pageTitle}" — possible parser gap.`);
     }
-    const plot = await getPlot(pageTitle!);
-    return chunkPlot(plot, ctx);
+    return chunks;
   };
 
   // No DB configured — just extract live.
@@ -245,16 +320,64 @@ export async function getCanon(
   }
 
   const id = indexId(pageTitle);
-  const rev = await fetchPageRevision(pageTitle);
 
   if (!opts?.force) {
     const row = await loadIndex(id);
-    if (row && isFresh(row, rev.revisionId)) {
-      return { pageTitle, type, scope, chunks: await loadChunks(id), cached: true };
+    if (row) {
+      // Recently (re)fetched — including by the background cron refresh —
+      // so skip the Wikipedia revision round-trip entirely and just serve.
+      if (Date.now() - row.fetched_at.getTime() < SOFT_FRESH_MS) {
+        return { pageTitle, type, scope, chunks: await loadChunks(id), cached: true };
+      }
+      const rev = await fetchPageRevision(pageTitle);
+      if (isFresh(row, rev.revisionId)) {
+        return { pageTitle, type, scope, chunks: await loadChunks(id), cached: true };
+      }
+      const chunks = await extract(rev.revisionId);
+      await store(id, { franchise: pageTitle, scope, pageTitle, pageId: rev.pageId, revisionId: rev.revisionId }, chunks);
+      return { pageTitle, type, scope, chunks, cached: false };
     }
   }
 
+  const rev = await fetchPageRevision(pageTitle);
   const chunks = await extract(rev.revisionId);
   await store(id, { franchise: pageTitle, scope, pageTitle, pageId: rev.pageId, revisionId: rev.revisionId }, chunks);
   return { pageTitle, type, scope, chunks, cached: false };
+}
+
+export type IndexSummary = {
+  id: string;
+  pageTitle: string;
+  scope: "episode" | "page";
+  franchise: string;
+  fetchedAt: Date;
+};
+
+/** List every cached work, for the background refresh job. */
+export async function listIndexes(): Promise<IndexSummary[]> {
+  const res = await getPool().query(
+    `SELECT id, page_title, scope, franchise, fetched_at FROM canon_index ORDER BY fetched_at ASC`,
+  );
+  return res.rows.map((r) => ({
+    id: r.id,
+    pageTitle: r.page_title,
+    scope: r.scope,
+    franchise: r.franchise,
+    fetchedAt: r.fetched_at,
+  }));
+}
+
+/**
+ * Re-extract and re-store a known page directly (no re-resolve — the cron
+ * job already knows the exact page from canon_index), refreshing its
+ * revision id, chunks, embeddings, and raw snapshot.
+ */
+export async function refreshPage(pageTitle: string, scope: "episode" | "page", franchise: string): Promise<void> {
+  const id = indexId(pageTitle);
+  const rev = await fetchPageRevision(pageTitle);
+  const ctx: ChunkSource = { franchise, revisionId: rev.revisionId };
+  const chunks = scope === "episode"
+    ? chunkEpisodes((await getEpisodes(pageTitle)).episodes, ctx)
+    : chunkPlot(await getPlot(pageTitle), ctx);
+  await store(id, { franchise, scope, pageTitle, pageId: rev.pageId, revisionId: rev.revisionId }, chunks);
 }
