@@ -6,9 +6,6 @@
 // set the cache simply isn't used — the rest of the extractor runs fine without it.
 
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
 import pg from "pg";
 import { resolveTitle, type CandidateType } from "./resolve.js";
 import { getEpisodes } from "./episodes.js";
@@ -16,6 +13,7 @@ import { getPlot } from "./plot.js";
 import { fetchPageRevision, fetchWikitext } from "./wikitext.js";
 import { chunkEpisodes, chunkPlot, type CanonChunk, type ChunkSource } from "./chunk.js";
 import { embedTexts, embedQuery, toPgVector, embeddingsEnabled } from "./embed.js";
+import { CANON_SCHEMA_SQL } from "./schema.js";
 
 const { Pool } = pg;
 
@@ -63,11 +61,7 @@ let schemaEnsured: Promise<void> | null = null;
  *  cheap to call on every getCanon() rather than relying on callers to do it. */
 export function ensureSchema(): Promise<void> {
   if (!schemaEnsured) {
-    schemaEnsured = (async () => {
-      const here = dirname(fileURLToPath(import.meta.url));
-      const sql = await readFile(join(here, "schema.sql"), "utf8");
-      await getPool().query(sql);
-    })();
+    schemaEnsured = getPool().query(CANON_SCHEMA_SQL).then(() => undefined);
   }
   return schemaEnsured;
 }

@@ -1,9 +1,11 @@
--- Storyvive story persistence + continuity state. Idempotent; safe to re-run.
--- A "story" is one user's ongoing generation against one work; chapters are
--- its generated content in order; story_state is the running "what's true
--- right now" summary that keeps chapter N+1 consistent with chapter N (and,
--- for chapter 1, consistent with how the real canon actually ended).
+// Storyvive story persistence + continuity state. Idempotent; safe to re-run.
+// A "story" is one user's ongoing generation against one work; chapters are
+// its generated content in order; story_state is the running "what's true
+// right now" summary that keeps chapter N+1 consistent with chapter N (and,
+// for chapter 1, consistent with how the real canon actually ended).
+// Embedded as a string, not a .sql file read at runtime — see canon/schema.ts for why.
 
+export const STORY_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS stories (
   id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id    uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -38,3 +40,4 @@ CREATE TABLE IF NOT EXISTS story_state (
 
 CREATE INDEX IF NOT EXISTS stories_user_id_idx ON stories (user_id);
 CREATE INDEX IF NOT EXISTS story_chapters_story_id_idx ON story_chapters (story_id);
+`;

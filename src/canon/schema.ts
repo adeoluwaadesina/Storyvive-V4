@@ -1,6 +1,12 @@
--- Storyvive canon cache schema (handover Section 9). Idempotent; safe to re-run.
--- One row per cached work in canon_index, its chunks in canon_chunk.
+// Storyvive canon cache schema (handover Section 9). Idempotent; safe to re-run.
+// One row per cached work in canon_index, its chunks in canon_chunk.
+//
+// Embedded as a string (not a separate .sql file read at runtime) because
+// Vercel's serverless bundler only packages files it can statically trace —
+// a dynamically-constructed fs path to a non-JS asset isn't reliably traced,
+// and this exact schema.sql went missing in production (ENOENT) as a result.
 
+export const CANON_SCHEMA_SQL = `
 CREATE EXTENSION IF NOT EXISTS vector;
 
 CREATE TABLE IF NOT EXISTS canon_index (
@@ -50,6 +56,7 @@ CREATE TABLE IF NOT EXISTS canon_raw (
 CREATE INDEX IF NOT EXISTS canon_chunk_index_id_idx ON canon_chunk (index_id);
 CREATE INDEX IF NOT EXISTS canon_index_lookup_idx ON canon_index (provider, page_title);
 CREATE INDEX IF NOT EXISTS canon_chunk_franchise_idx ON canon_chunk (franchise);
--- ivfflat over cosine distance; small `lists` since a single work has ~10-500 chunks
+-- ivfflat over cosine distance; small \`lists\` since a single work has ~10-500 chunks
 CREATE INDEX IF NOT EXISTS canon_chunk_embedding_idx
   ON canon_chunk USING ivfflat (embedding vector_cosine_ops) WITH (lists = 50);
+`;
