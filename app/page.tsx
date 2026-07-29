@@ -242,7 +242,7 @@ export default function HomePage() {
                         <li key={cite.chunkId}>
                           [{i + 1}]{" "}
                           {cite.scope === "episode"
-                            ? `S${cite.season ?? "?"}E${cite.episode ?? "?"} "${cite.title ?? "untitled"}"`
+                            ? `${cite.season != null ? `S${cite.season}E${cite.episode ?? "?"}` : cite.episode != null ? `Episode ${cite.episode}` : "Episode"} "${cite.title ?? "untitled"}"`
                             : cite.title ?? cite.scope}
                         </li>
                       ))}

@@ -9,6 +9,7 @@
 import OpenAI from "openai";
 import { getCanon, retrieveChunks, type RetrievedChunk } from "../canon/cache.js";
 import type { StoryState } from "./state.js";
+import { formatEpisodeLocation } from "./format.js";
 
 const MODEL = "gpt-4o";
 const RETRIEVE_K = 12;
@@ -49,24 +50,19 @@ const SYSTEM_PROMPT = `You are Storyvive, a canon-faithful fiction writer. You w
 - A set of numbered CANON EXCERPTS drawn from that work's Wikipedia canon
 - Optionally, a STORY STATE (what's currently true: who's alive, where things stand, unresolved threads) and the PREVIOUS CHAPTER already written
 
-Canon rules:
+Rules:
 1. Never contradict a fact stated in the excerpts or the STORY STATE (character deaths, plot events, relationships, timeline).
 2. If the user's prompt asks for something that would contradict canon, honor the SPIRIT of the request by finding an in-canon way to achieve it, or by clearly framing it as an alternate scenario.
 3. Ground concrete details (names, places, technologies, relationships) in what the excerpts show. Don't invent lore that already has canon coverage.
 4. Cite the excerpts you leaned on by their number, inline, like [3] or [3,7]. Cite when a detail comes directly from an excerpt; do not cite for common-sense or user-supplied details.
 5. If a PREVIOUS CHAPTER is given, continue directly from it — same characters' current state, same location/timeline unless the prompt moves them, no re-introducing things already established.
-
-Craft rules — write like a skilled novelist, not a summary:
-6. Show, don't tell: render moments through action, dialogue, and sensory detail instead of stating emotions or outcomes outright.
-7. Vary sentence rhythm — mix short punches with longer flowing sentences. Avoid repetitive openers and generic AI-fiction phrasing ("little did they know", "as if to", "in that moment").
-8. Ground scenes in concrete sensory detail (sound, light, texture, temperature) rather than abstract description.
-9. Aim for 600-1200 words unless the user specifies otherwise. Prose only — no meta-commentary, no headers, no "Here is a story:" preamble.`;
+6. Write clear, direct, easy-to-read prose — the kind of writing a fan would want to binge, not ornate or overwrought. Aim for 600-1200 words unless the user specifies otherwise. Prose only — no meta-commentary, no headers, no "Here is a story:" preamble.`;
 
 function formatExcerpts(chunks: RetrievedChunk[]): string {
   return chunks
     .map((c, i) => {
       const loc = c.scope === "episode"
-        ? `S${c.season ?? "?"}E${c.episode ?? "?"} "${c.title ?? "untitled"}"`
+        ? `${formatEpisodeLocation(c)} "${c.title ?? "untitled"}"`
         : c.title ?? c.scope;
       return `[${i + 1}] (${loc})\n${c.text}`;
     })

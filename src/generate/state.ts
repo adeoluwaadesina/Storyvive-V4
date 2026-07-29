@@ -12,6 +12,7 @@
 import OpenAI from "openai";
 import { getFinalChunks } from "../canon/cache.js";
 import type { CanonChunk } from "../canon/chunk.js";
+import { formatEpisodeLocation } from "./format.js";
 
 const UTILITY_MODEL = "gpt-4o-mini";
 
@@ -53,7 +54,7 @@ phrase locating where we are, e.g. "immediately after the season 1 finale".`;
 function formatChunks(chunks: CanonChunk[]): string {
   return chunks
     .map((c) => {
-      const loc = c.scope === "episode" ? `S${c.season ?? "?"}E${c.episode ?? "?"} "${c.title ?? "untitled"}"` : c.title ?? c.scope;
+      const loc = c.scope === "episode" ? `${formatEpisodeLocation(c)} "${c.title ?? "untitled"}"` : c.title ?? c.scope;
       return `(${loc})\n${c.text}`;
     })
     .join("\n\n");
