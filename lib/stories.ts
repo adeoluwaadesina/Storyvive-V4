@@ -17,9 +17,16 @@ export type StoryChapter = {
   id: string;
   storyId: string;
   chapterIndex: number;
+  title: string;
   userPrompt: string;
   content: string;
   citations: unknown[];
+  /** Story state as it stood before this chapter was generated — what the
+   *  reading UI shows, so it never spoils this chapter's own events. */
+  stateBefore: StoryState;
+  /** Story state once this chapter is folded in — the diff against
+   *  stateBefore drives the state-map animation when a new chapter lands. */
+  stateAfter: StoryState;
   createdAt: string;
 };
 
@@ -57,10 +64,12 @@ export async function touchStory(storyId: string): Promise<void> {
   await getPool().query(`UPDATE stories SET updated_at = now() WHERE id = $1`, [storyId]);
 }
 
+const CHAPTER_COLUMNS =
+  "id, story_id, chapter_index, title, user_prompt, content, citations, state_before, state_after, created_at";
+
 export async function getChapters(storyId: string): Promise<StoryChapter[]> {
   const res = await getPool().query(
-    `SELECT id, story_id, chapter_index, user_prompt, content, citations, created_at
-       FROM story_chapters WHERE story_id = $1 ORDER BY chapter_index ASC`,
+    `SELECT ${CHAPTER_COLUMNS} FROM story_chapters WHERE story_id = $1 ORDER BY chapter_index ASC`,
     [storyId],
   );
   return res.rows.map(toChapter);
@@ -68,8 +77,7 @@ export async function getChapters(storyId: string): Promise<StoryChapter[]> {
 
 export async function getLastChapter(storyId: string): Promise<StoryChapter | null> {
   const res = await getPool().query(
-    `SELECT id, story_id, chapter_index, user_prompt, content, citations, created_at
-       FROM story_chapters WHERE story_id = $1 ORDER BY chapter_index DESC LIMIT 1`,
+    `SELECT ${CHAPTER_COLUMNS} FROM story_chapters WHERE story_id = $1 ORDER BY chapter_index DESC LIMIT 1`,
     [storyId],
   );
   return res.rows[0] ? toChapter(res.rows[0]) : null;
@@ -78,15 +86,28 @@ export async function getLastChapter(storyId: string): Promise<StoryChapter | nu
 export async function addChapter(
   storyId: string,
   chapterIndex: number,
+  title: string,
   userPrompt: string,
   content: string,
   citations: unknown[],
+  stateBefore: StoryState,
+  stateAfter: StoryState,
 ): Promise<StoryChapter> {
   const res = await getPool().query(
-    `INSERT INTO story_chapters (story_id, chapter_index, user_prompt, content, citations)
-       VALUES ($1, $2, $3, $4, $5)
-     RETURNING id, story_id, chapter_index, user_prompt, content, citations, created_at`,
-    [storyId, chapterIndex, userPrompt, content, JSON.stringify(citations)],
+    `INSERT INTO story_chapters
+       (story_id, chapter_index, title, user_prompt, content, citations, state_before, state_after)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+     RETURNING ${CHAPTER_COLUMNS}`,
+    [
+      storyId,
+      chapterIndex,
+      title,
+      userPrompt,
+      content,
+      JSON.stringify(citations),
+      JSON.stringify(stateBefore),
+      JSON.stringify(stateAfter),
+    ],
   );
   await touchStory(storyId);
   return toChapter(res.rows[0]);
@@ -152,18 +173,24 @@ function toChapter(row: {
   id: string;
   story_id: string;
   chapter_index: number;
+  title: string;
   user_prompt: string;
   content: string;
   citations: unknown[];
+  state_before: StoryState | null;
+  state_after: StoryState | null;
   created_at: string;
 }): StoryChapter {
   return {
     id: row.id,
     storyId: row.story_id,
     chapterIndex: row.chapter_index,
+    title: row.title ?? "",
     userPrompt: row.user_prompt,
     content: row.content,
     citations: row.citations ?? [],
+    stateBefore: row.state_before ?? EMPTY_STATE,
+    stateAfter: row.state_after ?? EMPTY_STATE,
     createdAt: row.created_at,
   };
 }

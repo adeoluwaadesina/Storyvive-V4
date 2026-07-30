@@ -27,6 +27,17 @@ CREATE TABLE IF NOT EXISTS story_chapters (
   UNIQUE (story_id, chapter_index)
 );
 
+-- CREATE TABLE IF NOT EXISTS doesn't retrofit columns onto an existing table,
+-- so anything added after the table's first release needs an explicit ALTER.
+-- title: a short generated chapter title. state_before/state_after: story-state
+-- snapshots either side of this chapter's generation — state_before is what
+-- was true going into it (what the reading UI shows, so it never spoils this
+-- chapter's own events), state_after is what's true once it's folded in (the
+-- diff between the two drives the state-map animation).
+ALTER TABLE story_chapters ADD COLUMN IF NOT EXISTS title text NOT NULL DEFAULT '';
+ALTER TABLE story_chapters ADD COLUMN IF NOT EXISTS state_before jsonb;
+ALTER TABLE story_chapters ADD COLUMN IF NOT EXISTS state_after jsonb;
+
 -- One row per story: characters/threads/timeline as of the latest chapter
 -- (or, before any user chapter exists, as of the end of known canon).
 CREATE TABLE IF NOT EXISTS story_state (

@@ -43,9 +43,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     });
 
     const nextIndex = (lastChapter?.chapterIndex ?? 0) + 1;
-    const chapter = await addChapter(story.id, nextIndex, prompt, result.story, result.citations);
-
     const nextState = await updateState(state, prompt, result.story);
+    const chapter = await addChapter(
+      story.id, nextIndex, result.title, prompt, result.story, result.citations, state, nextState,
+    );
     await setState(story.id, nextState);
 
     return NextResponse.json({

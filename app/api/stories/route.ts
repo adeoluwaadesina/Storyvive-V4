@@ -53,9 +53,8 @@ export async function POST(req: Request) {
     const story = await createStory(userId, canon.pageTitle, title);
 
     const result = await generateChapter({ work: canon.pageTitle, prompt, state: seeded });
-    const chapter = await addChapter(story.id, 1, prompt, result.story, result.citations);
-
     const nextState = await updateState(seeded, prompt, result.story);
+    const chapter = await addChapter(story.id, 1, result.title, prompt, result.story, result.citations, seeded, nextState);
     await setState(story.id, nextState);
 
     return NextResponse.json({

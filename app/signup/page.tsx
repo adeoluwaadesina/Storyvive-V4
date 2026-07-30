@@ -41,9 +41,9 @@ export default function SignUpPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-[#0f1419] px-4">
-      <form onSubmit={submit} className="w-full max-w-sm space-y-5 rounded-2xl border border-white/10 bg-white/5 p-8 backdrop-blur">
-        <h1 className="text-center text-2xl font-semibold text-brand">Create your account</h1>
+    <main className="flex min-h-screen items-center justify-center bg-[#fafaf8] px-4">
+      <form onSubmit={submit} className="w-full max-w-sm space-y-5 rounded-2xl border border-black/10 bg-white p-8 shadow-[0_18px_50px_-14px_rgba(0,0,0,.12)]">
+        <h1 className="text-center font-serif text-2xl font-semibold text-[#14181c]">Create your account</h1>
         <div className="space-y-3">
           <input
             type="email"
@@ -51,7 +51,7 @@ export default function SignUpPage() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="you@example.com"
-            className="w-full rounded-lg border border-white/10 bg-black/30 px-4 py-2.5 text-sm text-white placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-brand"
+            className="w-full rounded-lg border border-black/10 bg-black/[0.02] px-4 py-2.5 text-sm text-[#14181c] placeholder:text-black/35 focus:outline-none focus:ring-2 focus:ring-brand"
           />
           <input
             type="password"
@@ -60,18 +60,18 @@ export default function SignUpPage() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder="Password (min. 8 characters)"
-            className="w-full rounded-lg border border-white/10 bg-black/30 px-4 py-2.5 text-sm text-white placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-brand"
+            className="w-full rounded-lg border border-black/10 bg-black/[0.02] px-4 py-2.5 text-sm text-[#14181c] placeholder:text-black/35 focus:outline-none focus:ring-2 focus:ring-brand"
           />
         </div>
-        {error && <p className="text-sm text-red-400">{error}</p>}
+        {error && <p className="text-sm text-red-600">{error}</p>}
         <button
           type="submit"
           disabled={loading}
-          className="w-full rounded-lg bg-gradient-to-r from-brand to-brand-light px-4 py-2.5 font-medium text-white transition hover:opacity-90 disabled:opacity-50"
+          className="w-full rounded-lg bg-brand px-4 py-2.5 font-medium text-white transition hover:opacity-90 disabled:opacity-50"
         >
           {loading ? "Creating account..." : "Sign up"}
         </button>
-        <p className="text-center text-sm text-white/50">
+        <p className="text-center text-sm text-black/50">
           Already have an account?{" "}
           <Link href="/signin" className="text-brand hover:underline">
             Sign in

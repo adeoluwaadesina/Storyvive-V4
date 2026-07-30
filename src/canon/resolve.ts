@@ -203,10 +203,7 @@ function biasOrder(cands: Candidate[], prefer?: CandidateType): Candidate[] {
     .map((x) => x.c);
 }
 
-export async function resolveTitle(
-  query: string,
-  opts?: { preferType?: CandidateType },
-): Promise<ResolveResult> {
+async function fetchCandidates(query: string): Promise<Candidate[]> {
   const search = await fetchWiki<SearchResponse>({
     action: "query",
     list: "search",
@@ -227,7 +224,7 @@ export async function resolveTitle(
   }
 
   if (disambigTitles.length === 0 && hits.length === 0) {
-    return { status: "low", reason: "no search results" };
+    return [];
   }
 
   const snippetByTitle = new Map<string, string>();
@@ -351,7 +348,7 @@ export async function resolveTitle(
     }
   }
 
-  const candidates: Candidate[] = titles.map((t) => {
+  return titles.map((t) => {
     const qid = titleToQid.get(t);
     return {
       pageTitle: t,
@@ -360,6 +357,14 @@ export async function resolveTitle(
       snippet: snippetByTitle.get(t) ?? "",
     };
   });
+}
+
+export async function resolveTitle(
+  query: string,
+  opts?: { preferType?: CandidateType },
+): Promise<ResolveResult> {
+  const candidates = await fetchCandidates(query);
+  if (candidates.length === 0) return { status: "low", reason: "no search results" };
 
   if (opts?.preferType) {
     const matched = candidates.filter((c) => typeMatches(c.type, opts.preferType!));
@@ -388,4 +393,17 @@ export async function resolveTitle(
     return { status: "medium", candidates: biasOrder(usable, opts?.preferType) };
   }
   return { status: "low", reason: "no usable candidates" };
+}
+
+/**
+ * Live search for the "Title" typeahead: always returns a ranked list of
+ * real, distinctly-typed candidates (never a single guessed pick), so the
+ * user explicitly confirms which work they mean before we ever touch the
+ * canon pipeline. Junk (disambiguation pages, untyped pages) is filtered out.
+ */
+export async function searchCandidates(query: string, limit = 6): Promise<Candidate[]> {
+  if (!query.trim()) return [];
+  const candidates = await fetchCandidates(query);
+  const usable = candidates.filter((c) => !isJunk(c.type));
+  return biasOrder(usable).slice(0, limit);
 }

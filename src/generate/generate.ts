@@ -40,6 +40,7 @@ export type StoryResult = {
   work: string;
   pageTitle: string;
   prompt: string;
+  title: string;
   story: string;
   citations: Citation[];
   usage: { inputTokens: number; outputTokens: number };
@@ -57,7 +58,15 @@ Rules:
 3. Ground concrete details (names, places, technologies, relationships) in what the excerpts show. Don't invent lore that already has canon coverage.
 4. Cite the excerpts you leaned on by their number, inline, like [3] or [3,7]. Cite when a detail comes directly from an excerpt; do not cite for common-sense or user-supplied details.
 5. If a PREVIOUS CHAPTER is given, continue directly from it — same characters' current state, same location/timeline unless the prompt moves them, no re-introducing things already established.
-6. Write clear, direct, easy-to-read prose — the kind of writing a fan would want to binge, not ornate or overwrought. Aim for 600-1200 words unless the user specifies otherwise. Prose only — no meta-commentary, no headers, no "Here is a story:" preamble.`;
+6. Write clear, direct, easy-to-read prose — the kind of writing a fan would want to binge, not ornate or overwrought. Aim for 600-1200 words unless the user specifies otherwise. Prose only — no meta-commentary, no headers, no "Here is a story:" preamble.
+
+Output format: first line exactly "TITLE: <a short, specific chapter title, 3-6 words, no quotes, no "Chapter N" prefix>", then a blank line, then the chapter prose only.`;
+
+function splitTitleAndStory(raw: string): { title: string; story: string } {
+  const match = /^TITLE:\s*(.+?)\s*\n+([\s\S]*)$/.exec(raw.trim());
+  if (!match) return { title: "", story: raw.trim() };
+  return { title: match[1].trim().replace(/^["']|["']$/g, ""), story: match[2].trim() };
+}
 
 function formatExcerpts(chunks: RetrievedChunk[]): string {
   return chunks
@@ -131,7 +140,7 @@ export async function generateChapter(opts: GenerateChapterOptions): Promise<Sto
     ],
   });
 
-  const story = (res.choices[0]?.message?.content ?? "").trim();
+  const { title, story } = splitTitleAndStory(res.choices[0]?.message?.content ?? "");
 
   const citations: Citation[] = chunks.map((c) => ({
     chunkId: c.id,
@@ -147,6 +156,7 @@ export async function generateChapter(opts: GenerateChapterOptions): Promise<Sto
     work,
     pageTitle: canon.pageTitle,
     prompt,
+    title,
     story,
     citations,
     usage: {
