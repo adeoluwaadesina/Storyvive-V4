@@ -232,26 +232,54 @@ export default function HomePage() {
               )}
             </div>
 
-            {chapters.map((c) => (
-              <div key={c.id} className="space-y-3 rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
-                <p className="text-xs uppercase tracking-wide text-white/40">Chapter {c.chapterIndex}</p>
-                <p className="whitespace-pre-wrap text-sm leading-relaxed text-white/90">{c.content}</p>
+            {chapters.map((c, idx) => (
+              <article
+                key={c.id}
+                className={`rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur sm:p-8 ${
+                  idx > 0 ? "border-t-2 border-t-brand/20" : ""
+                }`}
+              >
+                <header className="mb-6">
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-brand/70">
+                    Chapter {c.chapterIndex}
+                  </p>
+                  {c.userPrompt && (
+                    <p className="mt-1.5 text-sm italic text-white/40">&ldquo;{c.userPrompt}&rdquo;</p>
+                  )}
+                </header>
+
+                <div className="mx-auto max-w-[68ch] font-serif text-[17px] leading-8 text-white/90">
+                  {c.content
+                    .split(/\n{2,}/)
+                    .filter((p) => p.trim())
+                    .map((p, i) => (
+                      <p key={i} className="mb-5 last:mb-0">
+                        {p}
+                      </p>
+                    ))}
+                </div>
+
                 {c.citations.length > 0 && (
-                  <div className="border-t border-white/10 pt-3 text-xs text-white/50">
-                    <p className="mb-1 font-medium">Sources</p>
-                    <ul className="space-y-0.5">
+                  <details className="mt-6 border-t border-white/10 pt-4 text-xs text-white/50">
+                    <summary className="cursor-pointer select-none font-medium text-white/60 hover:text-white/80">
+                      Sources ({c.citations.length})
+                    </summary>
+                    <ul className="mt-2 flex flex-wrap gap-1.5">
                       {c.citations.map((cite, i) => (
-                        <li key={cite.chunkId}>
+                        <li
+                          key={cite.chunkId}
+                          className="rounded-full border border-white/10 bg-black/20 px-2.5 py-1"
+                        >
                           [{i + 1}]{" "}
                           {cite.scope === "episode"
-                            ? `${cite.season != null ? `S${cite.season}E${cite.episode ?? "?"}` : cite.episode != null ? `Episode ${cite.episode}` : "Episode"} "${cite.title ?? "untitled"}"${formatAirDate(cite.airDate) ? ` · aired ${formatAirDate(cite.airDate)}` : ""}`
+                            ? `${cite.season != null ? `S${cite.season}E${cite.episode ?? "?"}` : cite.episode != null ? `Episode ${cite.episode}` : "Episode"} "${cite.title ?? "untitled"}"${formatAirDate(cite.airDate) ? ` · ${formatAirDate(cite.airDate)}` : ""}`
                             : cite.title ?? cite.scope}
                         </li>
                       ))}
                     </ul>
-                  </div>
+                  </details>
                 )}
-              </div>
+              </article>
             ))}
 
             <div className="space-y-3 rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
