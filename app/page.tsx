@@ -53,11 +53,15 @@ function CitedText({ text }: { text: string }) {
     if (match.index > last) nodes.push(text.slice(last, match.index));
     const nums = match[1].split(",").map((n) => n.trim());
     nodes.push(
-      <sup key={match.index} className="mx-0.5 inline-flex gap-0.5 align-super">
+      <sup
+        key={match.index}
+        className="mx-px inline-flex gap-px"
+        style={{ position: "relative", top: "-0.5em" }}
+      >
         {nums.map((n) => (
           <span
             key={n}
-            className="inline-flex h-[15px] min-w-[15px] items-center justify-center rounded-full bg-brand px-[3px] text-[9px] font-bold leading-none text-white"
+            className="inline-flex h-[12px] min-w-[12px] items-center justify-center rounded-full bg-brand px-[2px] text-[7.5px] font-bold leading-none text-white"
           >
             {n}
           </span>
