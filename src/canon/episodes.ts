@@ -255,11 +255,8 @@ export async function getEpisodes(seedTitle: string): Promise<EpisodesResult> {
 // produced it.
 function applyTmdbOverlay(episodes: Episode[], tmdbEpisodes: TmdbEpisode[]): void {
   const bySeasonAndNumber = new Map<string, TmdbEpisode>();
-  const bySeason = new Map<number, TmdbEpisode[]>();
   for (const t of tmdbEpisodes) {
     bySeasonAndNumber.set(`${t.season}:${t.episode}`, t);
-    if (!bySeason.has(t.season)) bySeason.set(t.season, []);
-    bySeason.get(t.season)!.push(t);
   }
 
   const withSeason = episodes.filter((e) => e.season != null);
@@ -273,15 +270,17 @@ function applyTmdbOverlay(episodes: Episode[], tmdbEpisodes: TmdbEpisode[]): voi
     if (match) overlayEpisode(e, match);
   }
 
-  // Single-season shows with no season subpages (e.g. The Society): only
-  // safe when TMDB agrees there's exactly one season and the counts line up,
-  // so we match by chronological order rather than guessing.
-  const seasonNumbers = [...bySeason.keys()];
-  if (withoutSeason.length > 0 && seasonNumbers.length === 1) {
-    const tmdbSingle = (bySeason.get(seasonNumbers[0]) ?? []).slice().sort((a, b) => a.episode - b.episode);
-    if (tmdbSingle.length === withoutSeason.length) {
-      withoutSeason.forEach((e, i) => overlayEpisode(e, tmdbSingle[i]));
-    }
+  // Shows with no season subpages at all on Wikipedia (e.g. The Society,
+  // single season; The OA, two seasons but never labeled) leave every
+  // episode's `season` unset — but `sortEpisodes()` already put them in true
+  // chronological order upstream. When *no* episode has a season AND the
+  // total count matches TMDB's total across all its seasons, matching by
+  // order is safe; anything less clean-cut is left alone rather than guessed.
+  if (withSeason.length === 0 && withoutSeason.length === tmdbEpisodes.length) {
+    const tmdbChronological = tmdbEpisodes
+      .slice()
+      .sort((a, b) => (a.season - b.season) || (a.episode - b.episode));
+    withoutSeason.forEach((e, i) => overlayEpisode(e, tmdbChronological[i]));
   }
 }
 
