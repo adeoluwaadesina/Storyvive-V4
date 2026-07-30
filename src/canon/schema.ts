@@ -1,6 +1,12 @@
--- Storyvive canon cache schema (handover Section 9). Idempotent; safe to re-run.
--- One row per cached work in canon_index, its chunks in canon_chunk.
+// Storyvive canon cache schema (handover Section 9). Idempotent; safe to re-run.
+// One row per cached work in canon_index, its chunks in canon_chunk.
+//
+// Embedded as a string (not a separate .sql file read at runtime) because
+// Vercel's serverless bundler only packages files it can statically trace —
+// a dynamically-constructed fs path to a non-JS asset isn't reliably traced,
+// and this exact schema.sql went missing in production (ENOENT) as a result.
 
+export const CANON_SCHEMA_SQL = `
 CREATE EXTENSION IF NOT EXISTS vector;
 
 CREATE TABLE IF NOT EXISTS canon_index (
@@ -31,10 +37,26 @@ CREATE TABLE IF NOT EXISTS canon_chunk (
 
 -- Retrofit for tables created before the embedding column existed.
 ALTER TABLE canon_chunk ADD COLUMN IF NOT EXISTS embedding vector(1536);
+-- Position within a work's chunk sequence, in canon order (0-based). Lets us
+-- find "the final chunks" (the actual ending) for page-scope works, which
+-- have no season/episode to sort by otherwise.
+ALTER TABLE canon_chunk ADD COLUMN IF NOT EXISTS chunk_index integer NOT NULL DEFAULT 0;
+
+-- Raw (pre-cleaning) wikitext for every source page we actually pulled canon
+-- from, one row per page per work. Lets us later audit "did the model's
+-- citation really reflect what Wikipedia said" without re-fetching live.
+CREATE TABLE IF NOT EXISTS canon_raw (
+  index_id   text NOT NULL REFERENCES canon_index(id) ON DELETE CASCADE,
+  page_title text NOT NULL,
+  wikitext   text NOT NULL,
+  fetched_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (index_id, page_title)
+);
 
 CREATE INDEX IF NOT EXISTS canon_chunk_index_id_idx ON canon_chunk (index_id);
 CREATE INDEX IF NOT EXISTS canon_index_lookup_idx ON canon_index (provider, page_title);
 CREATE INDEX IF NOT EXISTS canon_chunk_franchise_idx ON canon_chunk (franchise);
--- ivfflat over cosine distance; small `lists` since a single work has ~10-500 chunks
+-- ivfflat over cosine distance; small \`lists\` since a single work has ~10-500 chunks
 CREATE INDEX IF NOT EXISTS canon_chunk_embedding_idx
   ON canon_chunk USING ivfflat (embedding vector_cosine_ops) WITH (lists = 50);
+`;

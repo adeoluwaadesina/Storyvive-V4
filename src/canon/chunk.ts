@@ -18,6 +18,10 @@ export type CanonChunk = {
   season?: number;
   episode?: number;
   title?: string;
+  /** Position within this work's chunk sequence, in canon order. Page-scope
+   *  chunks have no season/episode to sort by, so this is what lets us find
+   *  "the final chunks" (the actual ending) instead of an arbitrary order. */
+  chunkIndex: number;
   text: string;
   tokensApprox: number;
   source: {
@@ -25,6 +29,8 @@ export type CanonChunk = {
     pageTitle?: string;
     url?: string;
     revisionId?: number;
+    /** ISO date string, filled in from TMDB when available. */
+    airDate?: string;
   };
   trustTier: "primary" | "secondary";
 };
@@ -125,6 +131,7 @@ export function chunkEpisodes(episodes: Episode[], ctx: ChunkSource): CanonChunk
   const sourceType = ctx.sourceType ?? "wikipedia";
   const trustTier = ctx.trustTier ?? "primary";
   const out: CanonChunk[] = [];
+  let chunkIndex = 0;
 
   for (const ep of episodes) {
     const text = ep.shortSummary?.trim();
@@ -139,6 +146,7 @@ export function chunkEpisodes(episodes: Episode[], ctx: ChunkSource): CanonChunk
         season: ep.season,
         episode,
         title,
+        chunkIndex: chunkIndex++,
         text: piece,
         tokensApprox: approxTokens(piece),
         source: {
@@ -146,6 +154,7 @@ export function chunkEpisodes(episodes: Episode[], ctx: ChunkSource): CanonChunk
           pageTitle: ep.sourcePage,
           url: wikiUrl(ep.sourcePage),
           revisionId: ctx.revisionId,
+          airDate: ep.airDate,
         },
         trustTier,
       });
@@ -160,11 +169,12 @@ export function chunkPlot(plot: PlotResult, ctx: ChunkSource): CanonChunk[] {
   const sourceType = ctx.sourceType ?? "wikipedia";
   const trustTier = ctx.trustTier ?? "primary";
 
-  const out: CanonChunk[] = splitText(plot.text).map((piece) => ({
+  const out: CanonChunk[] = splitText(plot.text).map((piece, chunkIndex) => ({
     id: chunkId([ctx.franchise, "page", plot.section, piece]),
     franchise: ctx.franchise,
     scope: "page" as const,
     title: plot.section,
+    chunkIndex,
     text: piece,
     tokensApprox: approxTokens(piece),
     source: {

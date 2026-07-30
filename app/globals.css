@@ -1,13 +1,45 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
-  --color-brand: #f26722;
-  --color-brand-light: #f7b347;
+  --color-brand: #2c5fe0;
+  --color-brand-light: #5b82ea;
+  --font-display: Georgia, "Iowan Old Style", serif;
 }
 
+/* Design tokens: components reference these via bg-[var(--x)] etc. so light
+   and dark are just two value sets, not two copies of every class. */
 :root {
-  --background: #0f1419;
-  --foreground: #f5f5f0;
+  --background: #fafaf8;
+  --foreground: #14181c;
+  --card: #ffffff;
+  --card-muted: rgba(0, 0, 0, 0.02);
+  --border: rgba(0, 0, 0, 0.1);
+  --border-soft: rgba(0, 0, 0, 0.08);
+  --muted: rgba(0, 0, 0, 0.5);
+  --muted-soft: rgba(0, 0, 0, 0.4);
+  --placeholder: rgba(0, 0, 0, 0.35);
+  --rail-bg: #fbfbf9;
+  --node-alive: #2c5fe0;
+  --node-gone: #c1483a;
+  --node-unresolved: #b9bec4;
+}
+
+:root.dark {
+  --background: #101317;
+  --foreground: #eef0f2;
+  --card: #171b20;
+  --card-muted: rgba(255, 255, 255, 0.04);
+  --border: rgba(255, 255, 255, 0.12);
+  --border-soft: rgba(255, 255, 255, 0.09);
+  --muted: rgba(255, 255, 255, 0.55);
+  --muted-soft: rgba(255, 255, 255, 0.4);
+  --placeholder: rgba(255, 255, 255, 0.35);
+  --rail-bg: #1b2027;
+  --node-alive: #5b82ea;
+  --node-gone: #e0685c;
+  --node-unresolved: #6b7280;
 }
 
 body {

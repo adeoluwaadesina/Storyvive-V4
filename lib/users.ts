@@ -1,5 +1,5 @@
 import bcrypt from "bcryptjs";
-import { getPool, ensureUsersSchema } from "./db.js";
+import { getPool, ensureAppSchema } from "./db.js";
 
 export type User = {
   id: string;
@@ -9,7 +9,7 @@ export type User = {
 };
 
 export async function createUser(email: string, password: string): Promise<User> {
-  await ensureUsersSchema();
+  await ensureAppSchema();
   const passwordHash = await bcrypt.hash(password, 10);
   const res = await getPool().query(
     `INSERT INTO users (email, password_hash) VALUES ($1, $2)
@@ -20,7 +20,7 @@ export async function createUser(email: string, password: string): Promise<User>
 }
 
 export async function verifyUser(email: string, password: string): Promise<User | null> {
-  await ensureUsersSchema();
+  await ensureAppSchema();
   const res = await getPool().query(
     `SELECT id, email, password_hash, generations_used, generation_limit FROM users WHERE email = $1`,
     [email.toLowerCase().trim()],
@@ -32,7 +32,7 @@ export async function verifyUser(email: string, password: string): Promise<User 
 }
 
 export async function getUserById(id: string): Promise<User | null> {
-  await ensureUsersSchema();
+  await ensureAppSchema();
   const res = await getPool().query(
     `SELECT id, email, generations_used, generation_limit FROM users WHERE id = $1`,
     [id],
@@ -46,7 +46,7 @@ export async function getUserById(id: string): Promise<User | null> {
  * (no row is updated in that case, so nothing is double-spent).
  */
 export async function claimGeneration(id: string): Promise<User | null> {
-  await ensureUsersSchema();
+  await ensureAppSchema();
   const res = await getPool().query(
     `UPDATE users SET generations_used = generations_used + 1
        WHERE id = $1 AND generations_used < generation_limit
