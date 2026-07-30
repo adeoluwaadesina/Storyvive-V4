@@ -39,6 +39,37 @@ type Story = {
 
 type Usage = { generationsUsed?: number; generationLimit?: number };
 
+const CITATION_MARKER = /\[(\d+(?:\s*,\s*\d+)*)\]/g;
+
+/** Renders inline "[3]" / "[3,7]" citation markers as small blue circular
+ *  badges (matching the reference design) instead of leaving them as plain
+ *  bracket text from the model's output. */
+function CitedText({ text }: { text: string }) {
+  const nodes: React.ReactNode[] = [];
+  let last = 0;
+  let match: RegExpExecArray | null;
+  CITATION_MARKER.lastIndex = 0;
+  while ((match = CITATION_MARKER.exec(text))) {
+    if (match.index > last) nodes.push(text.slice(last, match.index));
+    const nums = match[1].split(",").map((n) => n.trim());
+    nodes.push(
+      <sup key={match.index} className="mx-0.5 inline-flex gap-0.5 align-super">
+        {nums.map((n) => (
+          <span
+            key={n}
+            className="inline-flex h-[15px] min-w-[15px] items-center justify-center rounded-full bg-brand px-[3px] text-[9px] font-bold leading-none text-white"
+          >
+            {n}
+          </span>
+        ))}
+      </sup>,
+    );
+    last = match.index + match[0].length;
+  }
+  if (last < text.length) nodes.push(text.slice(last));
+  return <>{nodes}</>;
+}
+
 export default function HomePage() {
   const { data: session, status } = useSession();
   const authed = status === "authenticated" && !!session;
@@ -339,7 +370,7 @@ export default function HomePage() {
                         .filter((p) => p.trim())
                         .map((p, i) => (
                           <p key={i} className="mb-5 last:mb-0">
-                            {p}
+                            <CitedText text={p} />
                           </p>
                         ))}
                     </div>
@@ -364,8 +395,8 @@ export default function HomePage() {
                           </p>
                           <ul className="space-y-1.5 text-[11px] text-[var(--muted)]">
                             {c.citations.map((cite, i) => (
-                              <li key={cite.chunkId}>
-                                <span className="mr-1 font-mono font-bold text-brand">[{i + 1}]</span>
+                              <li key={cite.chunkId} className="flex gap-1.5">
+                                <span className="font-mono font-bold text-brand">{i + 1}</span>
                                 {cite.scope === "episode"
                                   ? `${cite.season != null ? `S${cite.season}E${cite.episode ?? "?"}` : cite.episode != null ? `Episode ${cite.episode}` : "Episode"} "${cite.title ?? "untitled"}"${formatAirDate(cite.airDate) ? ` · ${formatAirDate(cite.airDate)}` : ""}`
                                   : cite.title ?? cite.scope}
