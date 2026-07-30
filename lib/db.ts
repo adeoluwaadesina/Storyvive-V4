@@ -1,6 +1,6 @@
 import pg from "pg";
-import { readFile } from "node:fs/promises";
-import path from "node:path";
+import { USERS_SCHEMA_SQL } from "../src/canon/users-schema.js";
+import { STORY_SCHEMA_SQL } from "../src/story/schema.js";
 
 const { Pool } = pg;
 
@@ -23,11 +23,11 @@ export function getPool(): pg.Pool {
 let schemaEnsured: Promise<void> | null = null;
 
 /** Idempotent; safe to call on every request, cached per server process. */
-export function ensureUsersSchema(): Promise<void> {
+export function ensureAppSchema(): Promise<void> {
   if (!schemaEnsured) {
     schemaEnsured = (async () => {
-      const sql = await readFile(path.join(process.cwd(), "src/canon/users.sql"), "utf8");
-      await getPool().query(sql);
+      await getPool().query(USERS_SCHEMA_SQL);
+      await getPool().query(STORY_SCHEMA_SQL); // depends on users existing (FK), run second
     })();
   }
   return schemaEnsured;

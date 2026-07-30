@@ -121,11 +121,20 @@ type DisambigResponse = {
 };
 type WbClaim = { mainsnak?: { datavalue?: { value?: { id?: string } } } };
 type WbEntitiesResponse = {
-  entities?: Record<string, { claims?: { P31?: WbClaim[] } }>;
+  entities?: Record<string, { claims?: { P31?: WbClaim[]; P136?: WbClaim[] } }>;
+};
+
+const HTML_ENTITIES: Record<string, string> = {
+  "&quot;": '"',
+  "&#039;": "'",
+  "&apos;": "'",
+  "&amp;": "&",
+  "&lt;": "<",
+  "&gt;": ">",
 };
 
 function stripTags(s: string): string {
-  return s.replace(/<[^>]*>/g, "");
+  return s.replace(/<[^>]*>/g, "").replace(/&#?\w+;/g, (e) => HTML_ENTITIES[e] ?? e);
 }
 
 function pickType(claims: WbClaim[] | undefined): CandidateType {
@@ -203,28 +212,32 @@ function biasOrder(cands: Candidate[], prefer?: CandidateType): Candidate[] {
     .map((x) => x.c);
 }
 
-export async function resolveTitle(
-  query: string,
-  opts?: { preferType?: CandidateType },
-): Promise<ResolveResult> {
-  const [disambigTitles, search] = [
-    await getDisambigLinks(query),
-    await fetchWiki<SearchResponse>({
-      action: "query",
-      list: "search",
-      srsearch: `intitle:${query}`,
-      srlimit: "10",
-    }),
-  ];
+async function fetchCandidates(query: string): Promise<Candidate[]> {
+  const search = await fetchWiki<SearchResponse>({
+    action: "query",
+    list: "search",
+    srsearch: `intitle:${query}`,
+    srlimit: "10",
+  });
   const hits = search.query?.search ?? [];
+  const searchTitlesOrdered = hits.map((h) => h.title);
+
+  let disambigTitles = await getDisambigLinks(query);
+  // MediaWiki's exact `titles=` lookup is case-sensitive beyond the first
+  // letter (unlike full-text search), so a differently-cased query (e.g. "the
+  // society" vs the real title "The Society") can silently miss a
+  // disambiguation page that search already found correctly cased. Retry
+  // against the top search hit's actual title before giving up on it.
+  if (disambigTitles.length === 0 && searchTitlesOrdered[0] && searchTitlesOrdered[0] !== query) {
+    disambigTitles = await getDisambigLinks(searchTitlesOrdered[0]);
+  }
+
   if (disambigTitles.length === 0 && hits.length === 0) {
-    return { status: "low", reason: "no search results" };
+    return [];
   }
 
   const snippetByTitle = new Map<string, string>();
   for (const h of hits) snippetByTitle.set(h.title, stripTags(h.snippet));
-
-  const searchTitlesOrdered = hits.map((h) => h.title);
 
   // Combined pool: every distinct title from both sources, sent in one
   // pageprops + Wikidata batch so we can type-check disambig links before
@@ -344,7 +357,7 @@ export async function resolveTitle(
     }
   }
 
-  const candidates: Candidate[] = titles.map((t) => {
+  return titles.map((t) => {
     const qid = titleToQid.get(t);
     return {
       pageTitle: t,
@@ -353,6 +366,14 @@ export async function resolveTitle(
       snippet: snippetByTitle.get(t) ?? "",
     };
   });
+}
+
+export async function resolveTitle(
+  query: string,
+  opts?: { preferType?: CandidateType },
+): Promise<ResolveResult> {
+  const candidates = await fetchCandidates(query);
+  if (candidates.length === 0) return { status: "low", reason: "no search results" };
 
   if (opts?.preferType) {
     const matched = candidates.filter((c) => typeMatches(c.type, opts.preferType!));
@@ -381,4 +402,55 @@ export async function resolveTitle(
     return { status: "medium", candidates: biasOrder(usable, opts?.preferType) };
   }
   return { status: "low", reason: "no usable candidates" };
+}
+
+/**
+ * Live search for the "Title" typeahead: always returns a ranked list of
+ * real, distinctly-typed candidates (never a single guessed pick), so the
+ * user explicitly confirms which work they mean before we ever touch the
+ * canon pipeline. Junk (disambiguation pages, untyped pages) is filtered out.
+ */
+export async function searchCandidates(query: string, limit = 6): Promise<Candidate[]> {
+  if (!query.trim()) return [];
+  const candidates = await fetchCandidates(query);
+  const usable = candidates.filter((c) => !isJunk(c.type));
+  return biasOrder(usable).slice(0, limit);
+}
+
+type LabelsResponse = {
+  entities?: Record<string, { labels?: { en?: { value?: string } } }>;
+};
+
+/**
+ * Genre tags (Wikidata P136) for a work, as human-readable labels — e.g.
+ * ["Comedy", "Adventure"]. Best-effort: returns [] if the entity has no
+ * genre claims or the lookup fails, so callers can always fall back to
+ * writing with no genre steer.
+ */
+export async function getGenres(wikidataId: string): Promise<string[]> {
+  try {
+    const ent = await fetchWikidata<WbEntitiesResponse>({
+      action: "wbgetentities",
+      ids: wikidataId,
+      props: "claims",
+      languages: "en",
+    });
+    const claims = ent.entities?.[wikidataId]?.claims?.P136 ?? [];
+    const genreIds = claims
+      .map((c) => c.mainsnak?.datavalue?.value?.id)
+      .filter((id): id is string => Boolean(id));
+    if (genreIds.length === 0) return [];
+
+    const labelsRes = await fetchWikidata<LabelsResponse>({
+      action: "wbgetentities",
+      ids: genreIds.join("|"),
+      props: "labels",
+      languages: "en",
+    });
+    return genreIds
+      .map((id) => labelsRes.entities?.[id]?.labels?.en?.value)
+      .filter((label): label is string => Boolean(label));
+  } catch {
+    return [];
+  }
 }
