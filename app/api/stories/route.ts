@@ -26,6 +26,7 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => null);
   const work = typeof body?.work === "string" ? body.work.trim() : "";
   const prompt = typeof body?.prompt === "string" ? body.prompt.trim() : "";
+  const genre = typeof body?.genre === "string" ? body.genre.trim() : "";
   if (!work || !prompt) {
     return NextResponse.json({ message: "Both a work title and a prompt are required." }, { status: 400 });
   }
@@ -50,9 +51,9 @@ export async function POST(req: Request) {
     const seeded = await seedStateFromCanon(canon.pageTitle);
 
     const title = typeof body?.title === "string" && body.title.trim() ? body.title.trim() : canon.pageTitle;
-    const story = await createStory(userId, canon.pageTitle, title);
+    const story = await createStory(userId, canon.pageTitle, title, genre);
 
-    const result = await generateChapter({ work: canon.pageTitle, prompt, state: seeded });
+    const result = await generateChapter({ work: canon.pageTitle, prompt, state: seeded, genre });
     const nextState = await updateState(seeded, prompt, result.story);
     const chapter = await addChapter(story.id, 1, result.title, prompt, result.story, result.citations, seeded, nextState);
     await setState(story.id, nextState);

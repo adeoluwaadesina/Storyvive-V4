@@ -115,7 +115,7 @@ export async function updateState(prev: StoryState, chapterPrompt: string, chapt
     `PREVIOUS STATE:`,
     JSON.stringify(prev, null, 2),
     ``,
-    `THE USER ASKED FOR: ${chapterPrompt}`,
+    `THE USER ASKED FOR: ${chapterPrompt || "(nothing specific — the chapter continued naturally)"}`,
     ``,
     `THE CHAPTER THAT WAS JUST WRITTEN:`,
     chapterText,

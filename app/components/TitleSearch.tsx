@@ -60,7 +60,7 @@ export default function TitleSearch({ value, onChange, disabled }: Props) {
 
   if (value) {
     return (
-      <div className="flex items-center justify-between border-b-2 border-[#14181c] pb-2">
+      <div className="flex items-center justify-between border-b-2 border-[var(--foreground)] pb-2">
         <div>
           <span className="font-serif text-xl">{value.pageTitle}</span>
           {TYPE_LABEL[value.type] && (
@@ -79,7 +79,7 @@ export default function TitleSearch({ value, onChange, disabled }: Props) {
             onChange(null);
             setQuery("");
           }}
-          className="text-xs text-black/40 hover:text-black/70"
+          className="text-xs text-[var(--muted-soft)] hover:text-[var(--foreground)]"
         >
           Change
         </button>
@@ -89,20 +89,20 @@ export default function TitleSearch({ value, onChange, disabled }: Props) {
 
   return (
     <div className="relative">
-      <div className="flex items-center border-b-2 border-[#14181c] pb-2">
+      <div className="flex items-center border-b-2 border-[var(--foreground)] pb-2">
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onFocus={() => candidates.length > 0 && setOpen(true)}
           placeholder="Search a TV series, book, or film…"
           disabled={disabled}
-          className="w-full bg-transparent font-serif text-xl placeholder:text-black/30 focus:outline-none disabled:opacity-50"
+          className="w-full bg-transparent font-serif text-xl placeholder:text-[var(--placeholder)] focus:outline-none disabled:opacity-50"
         />
-        {loading && <span className="text-xs text-black/30">…</span>}
+        {loading && <span className="text-xs text-[var(--muted-soft)]">…</span>}
       </div>
 
       {open && candidates.length > 0 && (
-        <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-lg border border-black/10 bg-white shadow-[0_12px_30px_-14px_rgba(0,0,0,.25)]">
+        <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--card)] shadow-[0_12px_30px_-14px_rgba(0,0,0,.25)]">
           {candidates.map((c) => (
             <button
               key={`${c.pageTitle}:${c.type}`}
@@ -111,7 +111,7 @@ export default function TitleSearch({ value, onChange, disabled }: Props) {
                 onChange(c);
                 setOpen(false);
               }}
-              className="flex w-full items-center gap-3.5 border-b border-black/[0.06] px-3.5 py-3 text-left last:border-b-0 hover:bg-black/[0.02]"
+              className="flex w-full items-center gap-3.5 border-b border-[var(--border-soft)] px-3.5 py-3 text-left last:border-b-0 hover:bg-[var(--card-muted)]"
             >
               <span
                 className={`inline-block w-14 shrink-0 rounded px-1.5 py-1 text-center text-[9.5px] font-bold text-white ${
@@ -121,8 +121,8 @@ export default function TitleSearch({ value, onChange, disabled }: Props) {
                 {TYPE_LABEL[c.type] ?? c.type}
               </span>
               <span>
-                <span className="block text-[15px] font-semibold text-[#14181c]">{c.pageTitle}</span>
-                {c.snippet && <span className="block text-xs text-black/45">{c.snippet}</span>}
+                <span className="block text-[15px] font-semibold text-[var(--foreground)]">{c.pageTitle}</span>
+                {c.snippet && <span className="block text-xs text-[var(--muted-soft)]">{c.snippet}</span>}
               </span>
             </button>
           ))}

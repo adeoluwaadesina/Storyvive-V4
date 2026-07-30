@@ -8,6 +8,7 @@ export type Story = {
   userId: string;
   work: string;
   title: string;
+  genre: string;
   status: string;
   createdAt: string;
   updatedAt: string;
@@ -30,12 +31,14 @@ export type StoryChapter = {
   createdAt: string;
 };
 
-export async function createStory(userId: string, work: string, title: string): Promise<Story> {
+const STORY_COLUMNS = "id, user_id, work, title, genre, status, created_at, updated_at";
+
+export async function createStory(userId: string, work: string, title: string, genre = ""): Promise<Story> {
   await ensureAppSchema();
   const res = await getPool().query(
-    `INSERT INTO stories (user_id, work, title) VALUES ($1, $2, $3)
-     RETURNING id, user_id, work, title, status, created_at, updated_at`,
-    [userId, work, title],
+    `INSERT INTO stories (user_id, work, title, genre) VALUES ($1, $2, $3, $4)
+     RETURNING ${STORY_COLUMNS}`,
+    [userId, work, title, genre],
   );
   return toStory(res.rows[0]);
 }
@@ -43,8 +46,7 @@ export async function createStory(userId: string, work: string, title: string): 
 export async function getStory(storyId: string, userId: string): Promise<Story | null> {
   await ensureAppSchema();
   const res = await getPool().query(
-    `SELECT id, user_id, work, title, status, created_at, updated_at
-       FROM stories WHERE id = $1 AND user_id = $2`,
+    `SELECT ${STORY_COLUMNS} FROM stories WHERE id = $1 AND user_id = $2`,
     [storyId, userId],
   );
   return res.rows[0] ? toStory(res.rows[0]) : null;
@@ -53,8 +55,7 @@ export async function getStory(storyId: string, userId: string): Promise<Story |
 export async function listStories(userId: string): Promise<Story[]> {
   await ensureAppSchema();
   const res = await getPool().query(
-    `SELECT id, user_id, work, title, status, created_at, updated_at
-       FROM stories WHERE user_id = $1 ORDER BY updated_at DESC`,
+    `SELECT ${STORY_COLUMNS} FROM stories WHERE user_id = $1 ORDER BY updated_at DESC`,
     [userId],
   );
   return res.rows.map(toStory);
@@ -154,6 +155,7 @@ function toStory(row: {
   user_id: string;
   work: string;
   title: string;
+  genre: string;
   status: string;
   created_at: string;
   updated_at: string;
@@ -163,6 +165,7 @@ function toStory(row: {
     userId: row.user_id,
     work: row.work,
     title: row.title,
+    genre: row.genre ?? "",
     status: row.status,
     createdAt: row.created_at,
     updatedAt: row.updated_at,

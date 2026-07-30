@@ -16,8 +16,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!story) return NextResponse.json({ message: "Story not found." }, { status: 404 });
 
   const body = await req.json().catch(() => null);
+  // Empty is allowed here — continuing a story doesn't require new direction,
+  // only starting one does.
   const prompt = typeof body?.prompt === "string" ? body.prompt.trim() : "";
-  if (!prompt) return NextResponse.json({ message: "A prompt is required." }, { status: 400 });
 
   const claimed = await claimGeneration(userId);
   if (!claimed) {
@@ -40,6 +41,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       prompt,
       state,
       previousChapterText: lastChapter?.content,
+      genre: story.genre,
     });
 
     const nextIndex = (lastChapter?.chapterIndex ?? 0) + 1;

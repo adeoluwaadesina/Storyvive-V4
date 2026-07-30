@@ -48,9 +48,9 @@ export type StoryResult = {
 
 const SYSTEM_PROMPT = `You are Storyvive, a canon-faithful fiction writer. You will be given:
 - The name of a work (a TV series, novel, film, etc.)
-- A user's story prompt for this chapter
+- A user's story prompt for this chapter — or, if the user didn't specify one, an instruction to continue naturally
 - A set of numbered CANON EXCERPTS drawn from that work's Wikipedia canon
-- Optionally, a STORY STATE (what's currently true: who's alive, where things stand, unresolved threads) and the PREVIOUS CHAPTER already written
+- Optionally, a GENRE, a STORY STATE (what's currently true: who's alive, where things stand, unresolved threads), and the PREVIOUS CHAPTER already written
 
 Rules:
 1. Never contradict a fact stated in the excerpts or the STORY STATE (character deaths, plot events, relationships, timeline).
@@ -59,6 +59,7 @@ Rules:
 4. Cite the excerpts you leaned on by their number, inline, like [3] or [3,7]. Cite when a detail comes directly from an excerpt; do not cite for common-sense or user-supplied details.
 5. If a PREVIOUS CHAPTER is given, continue directly from it — same characters' current state, same location/timeline unless the prompt moves them, no re-introducing things already established.
 6. Write clear, direct, easy-to-read prose — the kind of writing a fan would want to binge, not ornate or overwrought. Aim for 600-1200 words unless the user specifies otherwise. Prose only — no meta-commentary, no headers, no "Here is a story:" preamble.
+7. If a GENRE is given, match its tone throughout — e.g. for "Comedy" actually be funny (comic timing, banter, absurd situations), for "Horror" build dread, and so on. The genre governs tone and voice, never canon facts.
 
 Output format: first line exactly "TITLE: <a short, specific chapter title, 3-6 words, no quotes, no "Chapter N" prefix>", then a blank line, then the chapter prose only.`;
 
@@ -95,15 +96,19 @@ function formatState(state: StoryState): string {
 
 export type GenerateChapterOptions = {
   work: string;
-  prompt: string;
+  /** Empty/omitted means "continue naturally" — no explicit direction from the user. */
+  prompt?: string;
   /** Running continuity state; omit for a cold, stateless one-shot. */
   state?: StoryState;
   /** The immediately preceding chapter's text, if continuing a story. */
   previousChapterText?: string;
+  /** e.g. "Comedy, Adventure" — steers tone, never canon facts. */
+  genre?: string;
 };
 
 export async function generateChapter(opts: GenerateChapterOptions): Promise<StoryResult> {
-  const { work, prompt, state, previousChapterText } = opts;
+  const { work, state, previousChapterText, genre } = opts;
+  const prompt = opts.prompt?.trim() ?? "";
 
   // 1. Resolve + ensure the work's canon is cached and embedded.
   const canon = await getCanon(work);
@@ -111,8 +116,11 @@ export async function generateChapter(opts: GenerateChapterOptions): Promise<Sto
     throw new Error(`No canon chunks available for "${work}" (resolved to "${canon.pageTitle}").`);
   }
 
-  // 2. Retrieve top-k chunks most relevant to the prompt.
-  const chunks = await retrieveChunks(prompt, canon.pageTitle, RETRIEVE_K);
+  // 2. Retrieve top-k chunks most relevant to the prompt. With no explicit
+  // prompt, fall back to what's already anchoring the story so retrieval
+  // still finds something relevant instead of embedding an empty string.
+  const retrievalQuery = prompt || previousChapterText?.slice(-1000) || state?.lastEventSummary || work;
+  const chunks = await retrieveChunks(retrievalQuery, canon.pageTitle, RETRIEVE_K);
   if (chunks.length === 0) {
     throw new Error(
       `No chunks matched the prompt for "${canon.pageTitle}" — the cache may not have embeddings yet. ` +
@@ -122,13 +130,17 @@ export async function generateChapter(opts: GenerateChapterOptions): Promise<Sto
 
   // 3. Compose the user turn and call the writer model.
   const parts = [`WORK: ${canon.pageTitle}`, ``];
+  if (genre) {
+    parts.push(`GENRE: ${genre}`, ``);
+  }
   if (state) {
     parts.push(`STORY STATE:`, formatState(state), ``);
   }
   if (previousChapterText) {
     parts.push(`PREVIOUS CHAPTER:`, previousChapterText, ``);
   }
-  parts.push(`USER PROMPT: ${prompt}`, ``, `CANON EXCERPTS:`, formatExcerpts(chunks));
+  const promptLine = prompt || "(none — continue the story naturally from where it left off, following its own momentum)";
+  parts.push(`USER PROMPT: ${promptLine}`, ``, `CANON EXCERPTS:`, formatExcerpts(chunks));
   const userTurn = parts.join("\n");
 
   const res = await getClient().chat.completions.create({

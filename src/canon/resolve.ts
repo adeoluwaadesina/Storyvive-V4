@@ -121,11 +121,20 @@ type DisambigResponse = {
 };
 type WbClaim = { mainsnak?: { datavalue?: { value?: { id?: string } } } };
 type WbEntitiesResponse = {
-  entities?: Record<string, { claims?: { P31?: WbClaim[] } }>;
+  entities?: Record<string, { claims?: { P31?: WbClaim[]; P136?: WbClaim[] } }>;
+};
+
+const HTML_ENTITIES: Record<string, string> = {
+  "&quot;": '"',
+  "&#039;": "'",
+  "&apos;": "'",
+  "&amp;": "&",
+  "&lt;": "<",
+  "&gt;": ">",
 };
 
 function stripTags(s: string): string {
-  return s.replace(/<[^>]*>/g, "");
+  return s.replace(/<[^>]*>/g, "").replace(/&#?\w+;/g, (e) => HTML_ENTITIES[e] ?? e);
 }
 
 function pickType(claims: WbClaim[] | undefined): CandidateType {
@@ -406,4 +415,42 @@ export async function searchCandidates(query: string, limit = 6): Promise<Candid
   const candidates = await fetchCandidates(query);
   const usable = candidates.filter((c) => !isJunk(c.type));
   return biasOrder(usable).slice(0, limit);
+}
+
+type LabelsResponse = {
+  entities?: Record<string, { labels?: { en?: { value?: string } } }>;
+};
+
+/**
+ * Genre tags (Wikidata P136) for a work, as human-readable labels — e.g.
+ * ["Comedy", "Adventure"]. Best-effort: returns [] if the entity has no
+ * genre claims or the lookup fails, so callers can always fall back to
+ * writing with no genre steer.
+ */
+export async function getGenres(wikidataId: string): Promise<string[]> {
+  try {
+    const ent = await fetchWikidata<WbEntitiesResponse>({
+      action: "wbgetentities",
+      ids: wikidataId,
+      props: "claims",
+      languages: "en",
+    });
+    const claims = ent.entities?.[wikidataId]?.claims?.P136 ?? [];
+    const genreIds = claims
+      .map((c) => c.mainsnak?.datavalue?.value?.id)
+      .filter((id): id is string => Boolean(id));
+    if (genreIds.length === 0) return [];
+
+    const labelsRes = await fetchWikidata<LabelsResponse>({
+      action: "wbgetentities",
+      ids: genreIds.join("|"),
+      props: "labels",
+      languages: "en",
+    });
+    return genreIds
+      .map((id) => labelsRes.entities?.[id]?.labels?.en?.value)
+      .filter((label): label is string => Boolean(label));
+  } catch {
+    return [];
+  }
 }

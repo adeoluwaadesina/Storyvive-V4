@@ -15,9 +15,9 @@ function classify(status?: string): NodeStatus {
 }
 
 const COLOR: Record<NodeStatus, string> = {
-  alive: "#2c5fe0",
-  gone: "#c1483a",
-  unresolved: "#b9bec4",
+  alive: "var(--node-alive)",
+  gone: "var(--node-gone)",
+  unresolved: "var(--node-unresolved)",
 };
 
 const EXIT_MS = 900;
@@ -88,7 +88,7 @@ export default function StoryStateGraph({
 
   return (
     <div>
-      <div className="rounded-lg border border-black/[0.08] bg-[#fbfbf9]">
+      <div className="rounded-lg border border-[var(--border-soft)] bg-[var(--rail-bg)]">
         <svg viewBox="0 0 180 156" width="100%" height="140">
           {displayed.map((c, i) => {
             const angle = (i / n) * Math.PI * 2 - Math.PI / 2;
@@ -101,7 +101,7 @@ export default function StoryStateGraph({
                 y1={CY}
                 x2={x}
                 y2={y}
-                stroke="#d8dade"
+                stroke="var(--border)"
                 strokeWidth="1"
                 style={{
                   transition: `opacity ${EXIT_MS}ms ease`,
@@ -110,7 +110,7 @@ export default function StoryStateGraph({
               />
             );
           })}
-          <circle cx={CX} cy={CY} r="4" fill="#9aa0a8" />
+          <circle cx={CX} cy={CY} r="4" fill="var(--muted-soft)" />
           {displayed.map((c, i) => {
             const angle = (i / n) * Math.PI * 2 - Math.PI / 2;
             const x = CX + R * Math.cos(angle);
@@ -132,7 +132,14 @@ export default function StoryStateGraph({
                 }}
               >
                 <circle cx={x} cy={y} r="8" fill={COLOR[classify(c.status)]} />
-                <text x={x} y={y - 12} fontSize="9" textAnchor="middle" fontFamily="Georgia, serif" fill="#14181c">
+                <text
+                  x={x}
+                  y={y - 12}
+                  fontSize="9"
+                  textAnchor="middle"
+                  fontFamily="Georgia, serif"
+                  fill="var(--foreground)"
+                >
                   {c.name}
                 </text>
               </g>
@@ -141,7 +148,7 @@ export default function StoryStateGraph({
         </svg>
       </div>
 
-      <div className="mt-3 flex flex-col gap-1.5 text-[11px] text-black/60">
+      <div className="mt-3 flex flex-col gap-1.5 text-[11px] text-[var(--muted)]">
         <span>
           <i className="mr-1.5 inline-block h-2 w-2 rounded-full" style={{ background: COLOR.alive }} /> alive / free
         </span>
@@ -154,9 +161,9 @@ export default function StoryStateGraph({
       </div>
 
       {state.unresolvedThreads.length > 0 && (
-        <div className="mt-3 border-t border-black/[0.08] pt-3">
-          <p className="mb-1.5 font-mono text-[10px] uppercase tracking-wider text-black/40">Unresolved</p>
-          <ul className="space-y-1 text-[11.5px] text-black/60">
+        <div className="mt-3 border-t border-[var(--border-soft)] pt-3">
+          <p className="mb-1.5 font-mono text-[10px] uppercase tracking-wider text-[var(--muted-soft)]">Unresolved</p>
+          <ul className="space-y-1 text-[11.5px] text-[var(--muted)]">
             {state.unresolvedThreads.map((t, i) => (
               <li key={i}>{t}</li>
             ))}

@@ -38,6 +38,11 @@ ALTER TABLE story_chapters ADD COLUMN IF NOT EXISTS title text NOT NULL DEFAULT 
 ALTER TABLE story_chapters ADD COLUMN IF NOT EXISTS state_before jsonb;
 ALTER TABLE story_chapters ADD COLUMN IF NOT EXISTS state_after jsonb;
 
+-- Genre tag(s) (e.g. "Comedy, Adventure"), detected from Wikidata at story
+-- creation and editable by the user; carried on the story so every
+-- continuation chapter keeps matching tone, not just chapter 1.
+ALTER TABLE stories ADD COLUMN IF NOT EXISTS genre text NOT NULL DEFAULT '';
+
 -- One row per story: characters/threads/timeline as of the latest chapter
 -- (or, before any user chapter exists, as of the end of known canon).
 CREATE TABLE IF NOT EXISTS story_state (
